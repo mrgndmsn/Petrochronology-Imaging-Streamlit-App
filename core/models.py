@@ -47,7 +47,7 @@ class MapLayer:
             }
         )
 
-@dataclass
+@dataclass #defining a storage for grain results with layers and labels and shapes
 class GrainResult:
     layer_key: str
     labels: np.ndarray
@@ -55,7 +55,7 @@ class GrainResult:
     pixel_table: pd.DataFrame
     settings: dict[str, Any]
 
-@dataclass
+@dataclass #defining a point layer for each of the layers already defined but where we can now call columns and rows and also an excluded class
 class PointLayer:
     sample_id: str
     mineral_id: str
