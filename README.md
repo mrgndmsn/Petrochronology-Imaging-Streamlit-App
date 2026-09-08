@@ -1,1 +1,1 @@
-# Petrochronology-Imaging-Streamlit-App
+# Petrochronology-Imaging-Streamlit-Application
