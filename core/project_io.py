@@ -89,13 +89,74 @@ def save_project(
         archive.writestr("manifest.json", json.dumps(manifest, indent = 2))
     return output.getvalue()
 
-def
+def load_project(data):
+    with zipfile.ZipFile(bytesIO(data), "r") as archive:
+        names = set(archive.namelist())
+        if "manifest.json" not in names:
+            raise ValueError("This is not a geochemical map project.")
+        manifest = json.loads(archive.read("manifest.json"))
+        if (
+            manifest.get("format") != "geochemical-map-streamlit"
+            or manifest.get("version") != FORMAT_VERSION
+        ):
+            raise ValueError("unsupported project format or version.")
+        layers= {}
+        for item in manifest["layers"]:
+            with np.load(
+                BytesIO(archive.read(item["path"])), allow_pickle = False
+            ) as arrays:
+                layer = MapLayer(
+                    item["sample_id"],
+                    item["mineral_id"],
+                    item["run_id"],
+                    item["channel"],
+                    arrays["values"], 
+                    arrays["x"],
+                    arrays["y"],
+                    item.get("metadata", {}),
+                )
+            layers[item["key"]] = layer
+        tables = {
+            item["name"]: pd.read_csv(BytesIO(archive.read(item["path"])))
+            for item in manifest["tables"]
+        }
+        grains = {}
+        for item in manifest["grains"]:
+            labels = np.load(BytesIO(archive.read(item["labels"])), allow_pickle = False)
+            grains[item["key"]] = GrainResult(
+                item["layer_key"], 
+                labels, 
+                pd.read_csv(BytesIO(archive.read(item["shapes"]))),
+                pd.read_csv(BytesIO(archive.read(item["pixels"]))),
+                item.get("settings", {}),
+            )
+        selections = {
+            item["key"]: pd.read_csv(BytesIO(archive.read(item["path"])))
+            for item in manifest.get("selections", [])
+        }
+        point_layers = {
+            item["key"]: POintLayer(
+                item["sample_id"],
+                item["mineral_id"],
+                item["run_id"],
+                pd.read_csv(BytesIO(archive.read(item["path"]))),
+                item["x_column"],
+                item["y_column"],
+                item.get("metadata", {}),
+            )
+            for item in manifest.get("point_layers", {})
+        }
+        return{
+            "layers": layers, 
+            "point_lauers": point_layers, 
+            "tables": tables,
+            "grain_results": grains, 
+            "selections": selections, 
+            "manual_grain_centers": manifest.get("centers", {}),
+        }
+                
 
-
-
-
-
-
+                
 def _json_safe(value):
     if isinstance(value, dict):
         return {str(k): _json_safe(v) for k, v in value.items()}
