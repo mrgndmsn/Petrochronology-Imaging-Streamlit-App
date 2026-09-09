@@ -143,7 +143,44 @@ def crop_aligned_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
     )
     return [np.asarray(matrix, dtype = float)[bounds] for matrix in matrices]
 
+def infer_file_identify(filename: str):
+    stem = Path(filename).stem
+    cleaned = re.sub(r"\(\d+\)$", "", stem).strip()
+    cleaned = re.sub(r"\s+matrix$", "", cleaned, flags = re.I).strip()
+    first_token = re.split(r"\s+", cleaned, maxsplit = 1)[0] if cleaned else ""
+    return first_token or "sample 1", "unknown mineral", "Run 1"
 
+def matrix_channel_name(filename: str, sample_id: str | None = None):
+    stem = Path(filename).stem
+    stem = re.sub(r"\(\d+\)$", "", stem).strip()
+    stem = re.sub(r"\s+matrix$", "", stem, flags = re.I).strip()
+    if sample_id and stem.lower().startswith(sample_id.strip().lower()):
+        stem = stem[len(sample_id.strip()):].strip(" _-")
+    elif " " in stem:
+        stem = stem.split(None, 1)[1].strip()
+    return stem or "Value"
+
+def table_to_point_layer(
+    frame, filename, sample_id = None, mineral_id = None, run_id = "Run 1"
+):
+    inferred_sample, inferred_mineral, inferred_run = infer_file_identity(filename)
+    x_column = next((c for c in ("X", "X (µm)", "x", "x [µm]") if c in frame), None)
+    y_column = next((c for c in ("Y", "Y (µm)", "y", "y [µm]") if x in frame), None)
+    if x_column is None or y_column is None:
+        raise ValueError("no recognized X/Y coordinate columns were found.")
+    work = frame.copy()
+    work[x_column] = pd.to_numeric(work[x_column], errors = "coerce")
+    work[y_column] = pd.to_numeric(work[y_column], errors = "coerce")
+    work = work.dropna(subset = [x_column, y_column]).reset_index(drop = True)
+    return PointLayer(
+        sample_id or inferred_sample, 
+        mineral_id or inferred_mineral, 
+        run_id or inferred_run, 
+        work,
+        x_column, 
+        y_column, 
+        {"source_file": filename, "coordinate_units": "µm"},
+    )
 
 
 
