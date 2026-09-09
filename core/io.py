@@ -114,6 +114,35 @@ def safe_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Xa-z0-9._-]+", "_", str(value)).strip("._")
     return cleaned or "export"
 
+def read_sparse_matrix(data: bytes) -> np.ndarray:
+    values = read_numeric_matrix(data)
+    return crop_aligned_matrices([values])[0]
+
+def read_numeric_matrix(data: bytes) -> np.ndarray:
+    text = data.decode("utf-8-sig", errors = "replace")
+    frame = pd.read_csv(StringIO(text), header = None)
+    return frame.apply(pd.to_numeric, errors = "coerce").to_numpy(dtype = float)
+
+def crop_aligned_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
+    #this will crop a same-channel stack to its union footprint, preserving alignment
+    if not matrices:
+        return []
+    shape = matrices[0].shape
+    if any(np.asarray(matrix).shape != shape for matrix in matrices):
+        raise ValueError("Aligned matrix channels must have the same raw shape.")
+    union = np.zeros(shape, dtype = bool)
+    for matrix in matrices:
+        union |= np.isfinite(np/asarray(matrix, dtype = float))
+    finite_rows = np.flatnonzero(union.any(axis = 1))
+    finite_cols = np.flatnonzero(union.any(axis = 0))
+    if not finite_rows.size or not finite_cols.size:
+        raise ValueError("The matrix contains no finite values.")
+    bounds = (
+        slice(finite_rows.min(), finite_rows.max() +1),
+        slice(finite_cols.min(), finite_cols.max() +1),
+    )
+    return [np.asarray(matrix, dtype = float)[bounds] for matrix in matrices]
+
 
 
 
