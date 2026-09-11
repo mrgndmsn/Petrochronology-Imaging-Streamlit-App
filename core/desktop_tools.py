@@ -2,13 +2,8 @@ import numpy as np
 import pandas as pd
 from __future__ import annotations
 
-
-
-
-
-
 def mineral_fraction_table(
-    point_layers, samples = None, mode = "pixels", value_column = None
+    point_layers, samples=None, mode="pixels", value_column=None
 ):
     rows = []
     for layer in point_layers.values():
@@ -18,13 +13,13 @@ def mineral_fraction_table(
             value = len(layer.frame)
         elif mode == "mean":
             value = (
-                pd.to_numeric(layer.frame[value_column], errors = "coerce").mean()
+                pd.to_numeric(layer.frame[value_column], errors="coerce").mean()
                 if value_column in layer.frame
                 else np.nan
             )
         else:
             value = (
-                pd.to_numeric(layer.frame[value_column], errors = "coerce").sum()
+                pd.to_numeric(layer.frame[value_column], errors="coerce").sum()
                 if value_column in layer.frame
                 else np.nan
             )
@@ -51,7 +46,7 @@ def mineral_variability_table(point_layers, channels):
         for channel in channels:
             if channel not in layer.frame:
                 continue
-            values = pd.to_numeric(layer.frame[channel], errors = "coerce").dropna()
+            values = pd.to_numeric(layer.frame[channel], errors="coerce").dropna()
             if values.empty:
                 continue
             mean = values.mean()
@@ -72,9 +67,9 @@ def mineral_variability_table(point_layers, channels):
 
 
 def boundary_pair_tables(table, value_columns, inside_column="inside_phase"):
-    grouped = table.groupby(inside_column)[value_columns].mean(numeric_only = True)
-    inside = grouped.loc[True] if True in grouped.index else pd.Series(dtype = float)
-    outside = grouped.loc[False] if False in grouped.index else pd.Series(dtype = float)
+    grouped = table.groupby(inside_column)[value_columns].mean(numeric_only=True)
+    inside = grouped.loc[True] if True in grouped.index else pd.Series(dtype=float)
+    outside = grouped.loc[False] if False in grouped.index else pd.Series(dtype=float)
     rows = []
     for column in value_columns:
         a = inside.get(column, np.nan)
@@ -95,8 +90,8 @@ def boundary_pair_tables(table, value_columns, inside_column="inside_phase"):
             if numerator == denominator:
                 continue
             for side, subset in table.groupby(inside_column):
-                n = pd.to_numeric(subset[numerator], errors = "coerce")
-                d = pd.to_numeric(subset[denominator], errors = "coerce")
+                n = pd.to_numeric(subset[numerator], errors="coerce")
+                d = pd.to_numeric(subset[denominator], errors="coerce")
                 ratio = n / d.replace(0, np.nan)
                 pairs.append(
                     {
@@ -112,21 +107,21 @@ def boundary_pair_tables(table, value_columns, inside_column="inside_phase"):
 
 
 def profile_envelope(
-    frame, x, values, group, bins, envelope, positive_only = True, robust = True
+    frame, x, values, group, bins, envelope, positive_only=True, robust=True
 ):
     work = frame.copy()
     work["_bin"] = pd.cut(
         pd.to_numeric(work[x], errors="coerce"),
         int(bins),
-        labels = False,
-        duplicates = "drop",
+        labels=False,
+        duplicates="drop",
     )
     keys = [group, "_bin"] if group and group in work else ["_bin"]
     rows = []
-    for identity, subset in work.groupby(keys, dropna = False):
+    for identity, subset in work.groupby(keys, dropna=False):
         identity = identity if isinstance(identity, tuple) else (identity,)
         for column in values:
-            data = pd.to_numeric(subset[column], errors = "coerce").dropna()
+            data = pd.to_numeric(subset[column], errors="coerce").dropna()
             if positive_only:
                 data = data[data > 0]
             if robust and len(data) >= 8:
@@ -146,7 +141,7 @@ def profile_envelope(
                 center = data.median()
                 low, high = data.quantile(0.25), data.quantile(0.75)
             row = {
-                "x": pd.to_numeric(subset[x], errors = "coerce").mean(),
+                "x": pd.to_numeric(subset[x], errors="coerce").mean(),
                 "channel": column,
                 "mean": center,
                 "lower": low,
@@ -161,7 +156,7 @@ def profile_envelope(
 
 def _rho_identity(relative_a, relative_b, relative_product):
     denominator = 2 * relative_a * relative_b
-    with np.errstate(divide = "ignore", invalid = "ignore"):
+    with np.errstate(divide="ignore", invalid="ignore"):
         rho = (relative_a**2 + relative_b**2 - relative_product**2) / denominator
     return np.clip(rho, -1, 1) if np.isfinite(rho) else np.nan
 
