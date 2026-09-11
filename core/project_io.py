@@ -1,18 +1,28 @@
 from __future__ import annotations
+
 from dataclasses import asdict
+from copy import deepcopy
 from io import BytesIO
 import json
 import zipfile
+
 import numpy as np
 import pandas as pd
+
 from .models import GrainResult, MapLayer, PointLayer
 
 FORMAT_VERSION = 2
 
 
 def save_project(
-    layers, tables, grain_results, selections = None, centers = None, point_layers = None, definitions = None
+    layers, tables, grain_results, selections=None, centers=None, point_layers=None, definitions=None
 ):
+    # Detach collections before any slow serialization can overlap a rerun.
+    # Copy dictionary membership first; deepcopy also isolates mutable frames/arrays.
+    layers, tables, grain_results, selections, centers, point_layers, definitions = deepcopy((
+        layers.copy(), tables.copy(), grain_results.copy(),
+        (selections or {}).copy(), (centers or {}).copy(),
+        (point_layers or {}).copy(), list(definitions or [])))
     output = BytesIO()
     manifest = {
         "format": "geochemical-map-streamlit",
@@ -25,12 +35,12 @@ def save_project(
         "point_layers": [],
         "calculation_definitions": _json_safe(definitions or []),
     }
-    with zipfile.ZipFile(output, "w", compression = zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, (key, layer) in enumerate(layers.items()):
             path = f"layers/layer_{index}.npz"
             arrays = BytesIO()
             extra = {k:np.asarray(layer.metadata[k],float) for k in ('x_grid','y_grid') if k in layer.metadata}
-            np.savez_compressed(arrays, values = layer.values, x = layer.x, y = layer.y, **extra)
+            np.savez_compressed(arrays, values=layer.values, x=layer.x, y=layer.y, **extra)
             archive.writestr(path, arrays.getvalue())
             manifest["layers"].append(
                 {
@@ -45,7 +55,7 @@ def save_project(
             )
         for index, (name, frame) in enumerate(tables.items()):
             path = f"tables/table_{index}.json"
-            archive.writestr(path, frame.to_json(orient = "table", index = False, double_precision=15))
+            archive.writestr(path, frame.to_json(orient="table", index=False, double_precision=15))
             manifest["tables"].append({"name": name, "path": path, "attrs": _json_safe(frame.attrs)})
         for index, (key, result) in enumerate(grain_results.items()):
             label_path = f"grains/labels_{index}.npy"
@@ -54,8 +64,8 @@ def save_project(
             archive.writestr(label_path, buffer.getvalue())
             shape_path = f"grains/shapes_{index}.json"
             pixel_path = f"grains/pixels_{index}.json"
-            archive.writestr(shape_path, result.shape_table.to_json(orient = "table", index = False, double_precision = 15))
-            archive.writestr(pixel_path, result.pixel_table.to_json(orient = "table", index = False, double_precision = 15))
+            archive.writestr(shape_path, result.shape_table.to_json(orient="table", index=False, double_precision=15))
+            archive.writestr(pixel_path, result.pixel_table.to_json(orient="table", index=False, double_precision=15))
             manifest["grains"].append(
                 {
                     "key": key,
@@ -72,7 +82,7 @@ def save_project(
             manifest["selections"].append({"key": key, "path": path})
         for index, (key, layer) in enumerate((point_layers or {}).items()):
             path = f"point_layers/points_{index}.json"
-            archive.writestr(path, layer.frame.to_json(orient = "table", index = False, double_precision = 15))
+            archive.writestr(path, layer.frame.to_json(orient="table", index=False, double_precision=15))
             manifest["point_layers"].append(
                 {
                     "key": key,
@@ -175,28 +185,8 @@ def _json_safe(value):
 
 def _read_frame(archive, path):
     if path.endswith('.json'):
-        return pd.read_json(BytesIO(archive.read(path)), orient = 'table')
+        return pd.read_json(BytesIO(archive.read(path)), orient='table')
     try:
         return pd.read_csv(BytesIO(archive.read(path)))
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
