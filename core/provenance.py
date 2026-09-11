@@ -361,7 +361,20 @@ def apply_filters(frame, filters):
             out = out[out[column].astype(str).isin({str(v) for v in chosen})]
     return out
 
-
+def refit_moved_ellipse(reference, result, grain_id, center):
+    """Reference long-axis refit: keep angle and expand axes around the moved center."""
+    row = result.shape_table.loc[result.shape_table.grain_id == int(grain_id)].iloc[0]
+    rows, cols = np.where(result.labels == int(grain_id))
+    theta = np.radians(float(row.orientation_deg))
+    xv, yv = reference.coordinates_at(rows, cols)
+    dx, dy = xv-center[0], yv-center[1]
+    xp = dx*np.cos(theta)+dy*np.sin(theta)
+    yp = -dx*np.sin(theta)+dy*np.cos(theta)
+    a=max(float(row.grain_length_um)/2, np.max(np.abs(xp)))
+    b=max(float(row.grain_width_um)/2, np.max(np.abs(yp)))
+    major,minor,angle=2*a,2*b,float(row.orientation_deg)
+    if minor>major: major,minor,angle=minor,major,angle+90
+    return major,minor,angle
 
 
 
