@@ -4,14 +4,13 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from core.io import (matrix_channel_name, matrix_layers, numeric_columns, read_numeric_matrix, read_table, table_to_layer, table_to_point_layer, validate_assignment)
+from core.io import (matrix_channel_name, matrix_layers, numeric_columns, read_numeric_matrix,
+                     read_table, table_to_layer, table_to_point_layer, validate_assignment)
 from core.state import initialize_state
 from core.project_io import load_project, save_project
 from core.definitions import replay_definitions
 
-
-
-st.set_page_config(page_title = "Geochemical Map Analysis", page_icon = "🗺️", layout = "wide")
+st.set_page_config(page_title="Geochemical Map Analysis", page_icon="🗺️", layout="wide")
 initialize_state()
 st.title("Geochemical Map Analysis")
 st.write("Assign sample, mineral, run, and both pixel sizes explicitly for every import. "
@@ -20,12 +19,12 @@ st.write("Assign sample, mineral, run, and both pixel sizes explicitly for every
 
 def assignment(prefix):
     cols = st.columns(3)
-    sample = cols[0].text_input("Sample ID", key = f"{prefix}_sample")
-    mineral = cols[1].text_input("Mineral ID", key = f"{prefix}_mineral")
-    run = cols[2].text_input("Run ID", key = f"{prefix}_run")
+    sample = cols[0].text_input("Sample ID", key=f"{prefix}_sample")
+    mineral = cols[1].text_input("Mineral ID", key=f"{prefix}_mineral")
+    run = cols[2].text_input("Run ID", key=f"{prefix}_run")
     cols = st.columns(2)
-    dx = cols[0].number_input("X pixel size (µm)", min_value = 1e-12, value = None, key = f"{prefix}_dx")
-    dy = cols[1].number_input("Y pixel size (µm)", min_value = 1e-12, value = None, key = f"{prefix}_dy")
+    dx = cols[0].number_input("X pixel size (µm)", min_value=1e-12, value=None, key=f"{prefix}_dx")
+    dy = cols[1].number_input("Y pixel size (µm)", min_value=1e-12, value=None, key=f"{prefix}_dy")
     return sample, mineral, run, dx, dy
 
 
@@ -36,10 +35,6 @@ def commit_layers(layers):
                          ". Choose a different run or channel.")
     st.session_state.layers.update(layers)
     replay_definitions(st.session_state.layers, st.session_state.tables, st.session_state.calculation_definitions)
-
-
-
-
 
 
 project_file = st.file_uploader("Open a saved project", type=["zip"], key="project_upload")
@@ -73,6 +68,10 @@ with st.expander("Import data", expanded=True):
             ycol = st.selectbox("Y coordinate column", choices)
             channels = st.multiselect("Value/channel columns", [c for c in numbers if c not in (xcol, ycol)],
                                      key=f"channels_{selected}") if mode == "Raster channels" else []
+            rasterize = False
+            if mode == "Raster channels":
+                rasterize = st.checkbox("Rasterize scan coordinates to nearest grid cell", value=False)
+                st.caption("For sparse or drifting scan coordinates. Uses your explicit X/Y pixel sizes and the minimum coordinates as the grid origin. Values sharing a cell are averaged; unmeasured cells stay empty. The original table is retained.")
             if st.button("Import configured data", type="primary"):
                 sample, mineral, run, dx, dy = validate_assignment(*cfg)
                 table = frame.copy()
@@ -88,7 +87,7 @@ with st.expander("Import data", expanded=True):
                     layers = {}
                     for channel in channels:
                         layer = table_to_layer(frame, sample, mineral, run, channel,
-                            None if xcol == "None" else xcol, None if ycol == "None" else ycol, dx, dy)
+                            None if xcol == "None" else xcol, None if ycol == "None" else ycol, dx, dy, rasterize_coordinates=rasterize)
                         layers[layer.key] = layer
                     commit_layers(layers)
                 elif mode == "Point layer":
@@ -183,6 +182,7 @@ if records or st.session_state.tables:
             st.session_state[key] = copy.deepcopy(value)
         st.rerun()
 st.caption("Data are held in the Streamlit server session. Download a project to preserve your work.")
+
 
 
 
