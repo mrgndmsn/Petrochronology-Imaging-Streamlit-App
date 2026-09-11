@@ -177,11 +177,24 @@ if records:
 else:
     st.info("No map or point layers have been imported yet.")
 if records or st.session_state.tables:
-    st.download_button("Save complete project", save_project(st.session_state.layers, st.session_state.tables,
-        st.session_state.grain_results, st.session_state.selections, st.session_state.manual_grain_centers,
-        st.session_state.point_layers, st.session_state.calculation_definitions), "geochemical_project.gmap.zip", "application/zip")
+    if st.button("Prepare project download"):
+        st.session_state.pop("prepared_project_download", None)
+        try:
+            with st.spinner("Preparing project snapshot…"):
+                data = save_project(st.session_state.layers, st.session_state.tables,
+                    st.session_state.grain_results, st.session_state.selections, st.session_state.manual_grain_centers,
+                    st.session_state.point_layers, st.session_state.calculation_definitions)
+            from datetime import datetime
+            st.session_state.prepared_project_download = (data, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        except Exception as exc:
+            st.error(f"Project preparation failed: {exc}")
+    if "prepared_project_download" in st.session_state:
+        data, prepared_at = st.session_state.prepared_project_download
+        st.caption(f"Snapshot prepared at {prepared_at} (server time). After making changes, prepare again to include them.")
+        st.download_button("Save complete project", data, "geochemical_project.gmap.zip", "application/zip")
     st.write(f"{len(st.session_state.tables)} analysis tables available.")
     if st.button("Clear workspace"):
+        st.session_state.pop("prepared_project_download", None)
         from core.state import DEFAULTS
         import copy
         for key, value in DEFAULTS.items():
