@@ -71,6 +71,7 @@ def table_to_layer(
     y_column: str | None = None,
     pixel_size_x_um: float | None = None,
     pixel_size_y_um: float | None = None,
+    rasterize_coordinates: bool = False,
 ) -> MapLayer:
     sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um = validate_assignment(
         sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um)
@@ -96,8 +97,8 @@ def table_to_layer(
         x0, y0 = float(work.x.min()), float(work.y.min())
         cf = (work.x.to_numpy(float) - x0) / pixel_size_x_um
         rf = (work.y.to_numpy(float) - y0) / pixel_size_y_um
-        if not (np.allclose(cf, np.rint(cf), atol=1e-5, rtol=0) and np.allclose(rf, np.rint(rf), atol=1e-5, rtol=0)):
-            raise ValueError("Coordinates do not align to the explicit X/Y pixel sizes. Use a point layer for irregular coordinates.")
+        if not rasterize_coordinates and not (np.allclose(cf, np.rint(cf), atol=1e-5, rtol=0) and np.allclose(rf, np.rint(rf), atol=1e-5, rtol=0)):
+            raise ValueError("Coordinates do not align to the explicit X/Y pixel sizes. Enable nearest-cell rasterization for scan coordinates, or use a point layer to retain original coordinates.")
         nc, nr = int(np.rint(cf).max()) + 1, int(np.rint(rf).max()) + 1
         if nc * nr > 25_000_000:
             raise ValueError("The explicit X/Y grid is too large; check pixel sizes and coordinates.")
@@ -123,7 +124,8 @@ def table_to_layer(
         values=values,
         x=x.astype(float),
         y=y.astype(float),
-        metadata={"coordinates_are_um": coordinates_are_um, "pixel_size_x_um": pixel_size_x_um, "pixel_size_y_um": pixel_size_y_um},
+        metadata={"coordinates_are_um": coordinates_are_um, "pixel_size_x_um": pixel_size_x_um, "pixel_size_y_um": pixel_size_y_um,
+                  "coordinate_rasterization": "nearest cell; finite mean for collisions" if rasterize_coordinates else "exact grid"},
     )
 
 
@@ -275,27 +277,3 @@ def complete_coordinate_grid(values, shape):
     out=np.sum(np.asarray(columns)*fit[:,None,None],axis=0)
     out[finite]=values[finite]
     return out
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          
-
-
-
-
-
-
-
-
-
