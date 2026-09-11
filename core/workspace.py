@@ -225,7 +225,7 @@ def rename_identity(state, old_identity, new_identity, scope = 'Dataset'):
     for name,frame in out['tables'].items():
         renamed = name
         for before,after in identity_map.items():
-            if before! = after: renamed=renamed.replace(' | '.join(before),' | '.join(after))
+            if before != after: renamed=renamed.replace(' | '.join(before),' | '.join(after))
         if renamed in rebuilt: raise ValueError('Renaming would collide with an existing table name.')
         table_names[name] = renamed;rebuilt[renamed] = rename_frame(frame)
     out['tables'] = rebuilt
