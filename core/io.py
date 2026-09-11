@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 from io import BytesIO, StringIO
 from pathlib import Path
 import re
+
 import numpy as np
 import pandas as pd
+
 from .models import MapLayer, PointLayer
 
 
@@ -214,7 +217,7 @@ def table_to_point_layer(
 
 
 def matrix_layers(records, sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um,
-                  origin_x_um=0.0, origin_y_um=0.0, crop=True, x_coordinates=None, y_coordinates=None):
+                  origin_x_um=0.0, origin_y_um=0.0, crop=True, x_coordinates=None, y_coordinates=None, collapse_duplicates=False):
     """One explicitly assigned aligned channel stack. Records: (channel, filename, array)."""
     sample_id, mineral_id, run_id, dx, dy = validate_assignment(
         sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um)
@@ -230,6 +233,33 @@ def matrix_layers(records, sample_id, mineral_id, run_id, pixel_size_x_um, pixel
         raise ValueError("Origins must be finite.")
     if (x_coordinates is None) != (y_coordinates is None):
         raise ValueError("Both X and Y coordinate references are required.")
+    if collapse_duplicates:
+        if x_coordinates is None:
+            raise ValueError("Collapsing coordinate duplicates requires both X and Y reference matrices.")
+        xg, yg = np.asarray(x_coordinates,float), np.asarray(y_coordinates,float)
+        if xg.shape != arrays[0].shape or yg.shape != arrays[0].shape:
+            raise ValueError("Coordinate reference must match the raw matrix shape.")
+        valid = np.isfinite(xg) & np.isfinite(yg)
+        if not valid.any():
+            raise ValueError("No finite coordinate pairs were found.")
+        if any(np.any(np.isfinite(a) & ~valid) for a in arrays):
+            raise ValueError("Some finite channel values have no coordinate pair; supply their coordinates before collapsing.")
+        points = np.column_stack((xg[valid],yg[valid]))
+        unique, inverse, counts = np.unique(points,axis=0,return_inverse=True,return_counts=True)
+        layers = {}
+        for (channel,filename,_),a in zip(records,arrays):
+            v=a[valid]; finite=np.isfinite(v)
+            totals=np.bincount(inverse[finite],weights=v[finite],minlength=len(unique))
+            n=np.bincount(inverse[finite],minlength=len(unique))
+            mean=np.divide(totals,n,out=np.full(len(unique),np.nan),where=n>0)
+            frame=pd.DataFrame({'x':unique[:,0],'y':unique[:,1],'value':mean})
+            layer=table_to_layer(frame,sample_id,mineral_id,run_id,'value','x','y',dx,dy)
+            layer.channel=str(channel).strip()
+            layer.metadata.update(source_file=filename,collapsed_coordinate_duplicates=True,
+                coordinate_cells_before=int(valid.sum()),unique_coordinate_pairs=int(len(unique)),
+                duplicate_cells_collapsed=int(valid.sum()-len(unique)),aggregation='finite arithmetic mean per exact X/Y pair')
+            layers[layer.key]=layer
+        return layers
     if x_coordinates is not None:
         x_coordinates = complete_coordinate_grid(x_coordinates, arrays[0].shape)
         y_coordinates = complete_coordinate_grid(y_coordinates, arrays[0].shape)
