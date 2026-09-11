@@ -129,6 +129,28 @@ with tab_ree:
 
 
 
+with tab_ternary:
+    if len(numbers) < 3:
+        st.info("At least three numeric columns are required.")
+    else:
+        cols = st.columns(3)
+        a,b,c = [cols[i].selectbox(f"{label} axis", numbers, index = i) for i,label in enumerate('ABC')]
+        color = st.selectbox("Ternary color/group", ["None"]+list(frame.columns))
+        symbol = st.selectbox("Ternary symbol", ["None"]+list(frame.columns))
+        opacity = st.slider("Ternary opacity", .05, 1., .7)
+        try:
+            tern = prepare_ternary(frame,a,b,c)
+            st.caption(f"{len(tern)} valid rows; {len(frame)-len(tern)} excluded for nonfinite, negative, or zero-total components.")
+            if not tern.empty:
+                fig = px.scatter_ternary(tern, a=a+'_fraction', b=b+'_fraction', c=c+'_fraction',
+                    color=None if color == 'None' else color, symbol = None if symbol == 'None' else symbol,
+                    opacity=opacity, template='plotly_white')
+                fig.update_layout(ternary = dict(aaxis_title=a,baxis_title=b,caxis_title=c))
+                render_chart(fig, width = "stretch", key = "ternary_figure")
+                st.download_button("Download ternary fractions", tern.to_csv(index = False), "ternary_data.csv", "text/csv")
+        except ValueError as exc:
+            st.error(str(exc))
+
 
 
 
