@@ -43,4 +43,156 @@ def commit_layers(layers):
 
 
 
+project_file = st.file_uploader("Open a saved project", type=["zip"], key="project_upload")
+if project_file is not None and st.button("Load complete project"):
+    try:
+        restored = load_project(project_file.getvalue())
+        for key, value in restored.items():
+            st.session_state[key] = value
+        st.session_state.table_history = {}
+        st.session_state.grain_history = {}
+        st.session_state.selection_history = []
+        st.session_state.active_table_name = next(iter(st.session_state.tables), None)
+        st.success("Project loaded.")
+    except Exception as exc:
+        st.error(f"Project could not be loaded: {exc}")
+
+with st.expander("Import data", expanded=True):
+    files = st.file_uploader("CSV, TSV, TXT, XLSX, or XLS files", type=["csv", "tsv", "txt", "xlsx", "xls"],
+                            accept_multiple_files=True, key="table_files")
+    if files:
+        selected = st.selectbox("File to configure", [f.name for f in files])
+        uploaded = next(f for f in files if f.name == selected)
+        try:
+            frame = read_table(uploaded.getvalue(), uploaded.name)
+            st.dataframe(frame.head(20), width="stretch")
+            cfg = assignment(f"table_{selected}")
+            mode = st.radio("Import as", ["Raster channels", "Point layer", "Analysis table"], horizontal=True)
+            numbers = numeric_columns(frame)
+            choices = ["None"] + list(frame.columns)
+            xcol = st.selectbox("X coordinate column", choices)
+            ycol = st.selectbox("Y coordinate column", choices)
+            channels = st.multiselect("Value/channel columns", [c for c in numbers if c not in (xcol, ycol)],
+                                     key=f"channels_{selected}") if mode == "Raster channels" else []
+            if st.button("Import configured data", type="primary"):
+                sample, mineral, run, dx, dy = validate_assignment(*cfg)
+                table = frame.copy()
+                for col, value in zip(("sample_id", "mineral_id", "run_id"), (sample, mineral, run)):
+                    table[col] = value
+                table["pixel_size_x_um"], table["pixel_size_y_um"] = dx, dy
+                name = f"{mode} | {sample} | {mineral} | {run} | {uploaded.name}"
+                if name in st.session_state.tables:
+                    raise ValueError("This table already exists. Choose a different run.")
+                if mode == "Raster channels":
+                    if not channels:
+                        raise ValueError("Select at least one value channel.")
+                    layers = {}
+                    for channel in channels:
+                        layer = table_to_layer(frame, sample, mineral, run, channel,
+                            None if xcol == "None" else xcol, None if ycol == "None" else ycol, dx, dy)
+                        layers[layer.key] = layer
+                    commit_layers(layers)
+                elif mode == "Point layer":
+                    if "None" in (xcol, ycol):
+                        raise ValueError("Select both coordinate columns.")
+                    layer = table_to_point_layer(frame, uploaded.name, sample, mineral, run, dx, dy, xcol, ycol)
+                    if layer.key in st.session_state.point_layers:
+                        raise ValueError("This point-layer identity already exists. Choose a different run.")
+                    st.session_state.point_layers[layer.key] = layer
+                st.session_state.tables[name] = table
+                replay_definitions(st.session_state.layers, st.session_state.tables, st.session_state.calculation_definitions)
+                st.session_state.active_table_name = name
+                st.success(f"Imported {name}.")
+        except Exception as exc:
+            st.error(f"Import failed: {exc}")
+
+with st.expander("Import aligned matrix files"):
+    st.write("Select only co-registered channels for one sample/mineral/run. Different shapes are rejected. "
+             "Cropping keeps the original spatial offset. Filenames are channel suggestions only.")
+    files = st.file_uploader("Headerless matrix CSV files", type=["csv"], accept_multiple_files=True, key="matrix_files")
+    cfg = assignment("matrix")
+    cols = st.columns(2)
+    ox = cols[0].number_input("Matrix X origin (µm)", value=0.0)
+    oy = cols[1].number_input("Matrix Y origin (µm)", value=0.0)
+    crop = st.checkbox("Crop empty outer rows and columns", True)
+    x_reference = st.file_uploader("X coordinate-reference matrix (optional)",type=["csv"],key="matrix_x_reference")
+    y_reference = st.file_uploader("Y coordinate-reference matrix (optional)",type=["csv"],key="matrix_y_reference")
+    st.caption("Coordinate references must match the raw channel shapes. Both are required together; their physical centers replace origin/axis coordinates, while the explicit X/Y sizes define pixel footprint.")
+    channels = {}
+    for f in files or []:
+        channels[f.name] = st.text_input(f"Channel for {f.name}", matrix_channel_name(f.name), key=f"matrix_channel_{f.name}")
+    if st.button("Import aligned matrices", disabled=not files):
+        try:
+            records = [(channels[f.name], f.name, read_numeric_matrix(f.getvalue())) for f in files]
+            layers = matrix_layers(records, *cfg, origin_x_um=ox, origin_y_um=oy, crop=crop,
+                x_coordinates=read_numeric_matrix(x_reference.getvalue()) if x_reference is not None else None,
+                y_coordinates=read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None)
+            commit_layers(layers)
+            st.success(f"Imported {len(layers)} aligned channels.")
+        except Exception as exc:
+            st.error(f"Matrix import failed: {exc}")
+
+with st.expander("Import Probe DAT or Surfer 7 grid"):
+    from core.instrument_io import read_probe_dat_bytes, read_surfer7_bytes
+    instrument = st.file_uploader("Instrument map", type=["dat", "grd"])
+    cfg = assignment("instrument")
+    ix = st.number_input("Instrument X origin (µm)", value=0.)
+    iy = st.number_input("Instrument Y origin (µm)", value=0.)
+    channel = st.text_input("Surfer channel name")
+    if instrument is not None:
+        try:
+            if instrument.name.lower().endswith('.dat'):
+                arrays, source_metadata = read_probe_dat_bytes(instrument.getvalue())
+            else:
+                z, source_metadata = read_surfer7_bytes(instrument.getvalue())
+                arrays = {channel: z}
+            st.write("Coordinate metadata reported by the file:", source_metadata)
+            st.caption("The explicitly entered origin and X/Y sizes set the imported grid calibration.")
+            if st.button("Import instrument map"):
+                layers = matrix_layers([(c,instrument.name,z) for c,z in arrays.items()], *cfg,
+                                       origin_x_um=ix, origin_y_um=iy, crop=False)
+                for layer in layers.values(): layer.metadata.update(source_metadata)
+                commit_layers(layers)
+                st.success(f"Imported {len(layers)} instrument channels.")
+        except ValueError as exc:
+            st.error(str(exc))
+
+st.subheader("Current workspace")
+records = []
+for layer in st.session_state.layers.values():
+    dx, dy = layer.pixel_size
+    records.append({"Sample": layer.sample_id, "Mineral": layer.mineral_id, "Run": layer.run_id,
+                    "Channel": layer.channel, "Rows": layer.values.shape[0], "Columns": layer.values.shape[1],
+                    "X pixel (µm)": dx, "Y pixel (µm)": dy})
+for layer in st.session_state.point_layers.values():
+    records.append({"Sample": layer.sample_id, "Mineral": layer.mineral_id, "Run": layer.run_id,
+                    "Channel": "point table", "Rows": len(layer.frame), "Columns": len(layer.frame.columns),
+                    "X pixel (µm)": layer.metadata.get("pixel_size_x_um"), "Y pixel (µm)": layer.metadata.get("pixel_size_y_um")})
+if records:
+    st.dataframe(pd.DataFrame(records), width="stretch", hide_index=True)
+else:
+    st.info("No map or point layers have been imported yet.")
+if records or st.session_state.tables:
+    st.download_button("Save complete project", save_project(st.session_state.layers, st.session_state.tables,
+        st.session_state.grain_results, st.session_state.selections, st.session_state.manual_grain_centers,
+        st.session_state.point_layers, st.session_state.calculation_definitions), "geochemical_project.gmap.zip", "application/zip")
+    st.write(f"{len(st.session_state.tables)} analysis tables available.")
+    if st.button("Clear workspace"):
+        from core.state import DEFAULTS
+        import copy
+        for key, value in DEFAULTS.items():
+            st.session_state[key] = copy.deepcopy(value)
+        st.rerun()
+st.caption("Data are held in the Streamlit server session. Download a project to preserve your work.")
+
+
+
+
+
+
+
+
+
+
+
 
