@@ -1,6 +1,7 @@
+from __future__ import annotations
 import numpy as np
 import pandas as pd
-from __future__ import annotations
+
 
 def mineral_fraction_table(
     point_layers, samples=None, mode="pixels", value_column=None
