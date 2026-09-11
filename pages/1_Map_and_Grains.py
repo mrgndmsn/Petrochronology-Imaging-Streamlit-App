@@ -15,7 +15,7 @@ from core.state import initialize_state, layer_options
 st.set_page_config(page_title = "Map and grains", page_icon = "🗺️", layout = "wide")
 initialize_state()
 st.title("Map and grain analysis")
-ptions = layer_options()
+options = layer_options()
 if not options:
     st.info("Import a map layer on the Home page first.")
     st.stop()
