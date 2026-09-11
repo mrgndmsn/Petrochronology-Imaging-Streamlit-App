@@ -7,7 +7,7 @@ import pandas as pd
 
 from .models import MapLayer, PointLayer
 
-def unique_columns(columns) -> list[str]
+def unique_columns(columns) -> list[str]:
     counts: dict[str, int] = {}
     result = []
     for raw in columns:
