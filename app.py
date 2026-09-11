@@ -116,6 +116,11 @@ with st.expander("Import aligned matrix files"):
     x_reference = st.file_uploader("X coordinate-reference matrix (optional)",type=["csv"],key="matrix_x_reference")
     y_reference = st.file_uploader("Y coordinate-reference matrix (optional)",type=["csv"],key="matrix_y_reference")
     st.caption("Coordinate references must match the raw channel shapes. Both are required together; their physical centers replace origin/axis coordinates, while the explicit X/Y sizes define pixel footprint.")
+    collapse = st.checkbox("Collapse repeated X/Y coordinates (mean per pixel)", value=False)
+    if x_reference is not None and y_reference is not None:
+        st.info("The X/Y reference files set the positions; both origin fields are ignored. Upload chemistry matrices above, and X/Y matrices only in their reference slots.")
+    if collapse:
+        st.caption("Exact duplicate coordinate pairs become one pixel using the finite mean for each channel. Enter the original measurement pixel sizes. Empty coordinate-free padding is removed; remaining coordinates must align to those sizes. This also works with one-to-one coordinates.")
     channels = {}
     for f in files or []:
         channels[f.name] = st.text_input(f"Channel for {f.name}", matrix_channel_name(f.name), key=f"matrix_channel_{f.name}")
@@ -124,7 +129,8 @@ with st.expander("Import aligned matrix files"):
             records = [(channels[f.name], f.name, read_numeric_matrix(f.getvalue())) for f in files]
             layers = matrix_layers(records, *cfg, origin_x_um=ox, origin_y_um=oy, crop=crop,
                 x_coordinates=read_numeric_matrix(x_reference.getvalue()) if x_reference is not None else None,
-                y_coordinates=read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None)
+                y_coordinates=read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None,
+                collapse_duplicates=collapse)
             commit_layers(layers)
             st.success(f"Imported {len(layers)} aligned channels.")
         except Exception as exc:
@@ -182,16 +188,3 @@ if records or st.session_state.tables:
             st.session_state[key] = copy.deepcopy(value)
         st.rerun()
 st.caption("Data are held in the Streamlit server session. Download a project to preserve your work.")
-
-
-
-
-
-
-
-
-
-
-
-
-
