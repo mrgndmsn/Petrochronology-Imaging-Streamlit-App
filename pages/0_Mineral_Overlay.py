@@ -8,7 +8,6 @@ from core.exports import render_chart
 from core.mineral_layers import mineral_layers_ui
 from core.state import initialize_state
 
-
 st.set_page_config(page_title="Mineral overlay", page_icon="💎", layout="wide")
 initialize_state()
 mineral_points = mineral_layers_ui(st.session_state, "overlay")
@@ -48,21 +47,21 @@ for index, layer in enumerate(layers):
     present = np.zeros(len(frame), bool)
     for column in value_columns:
         present |= np.isfinite(
-            __import__("pandas").to_numeric(frame[column], errors = "coerce").to_numpy()
+            __import__("pandas").to_numeric(frame[column], errors="coerce").to_numpy()
         )
     shown = frame.loc[present]
     figure.add_trace(
         go.Scattergl(
-            x = shown[layer.x_column],
-            y = shown[layer.y_column],
-            mode = "markers",
-            marker = {
+            x=shown[layer.x_column],
+            y=shown[layer.y_column],
+            mode="markers",
+            marker={
                 "size": size,
                 "color": colors[index % len(colors)],
                 "opacity": opacity,
             },
             name=layer.mineral_id,
-            hovertemplate = f"{layer.mineral_id}<br>x=%{{x:.3f}}<br>y=%{{y:.3f}}<extra></extra>",
+            hovertemplate=f"{layer.mineral_id}<br>x=%{{x:.3f}}<br>y=%{{y:.3f}}<extra></extra>",
         )
     )
     summary.append(
@@ -76,13 +75,14 @@ for index, layer in enumerate(layers):
         }
     )
 figure.update_layout(
-    template = "plotly_white",
-    height = 800,
-    xaxis_title = "X (µm)",
-    yaxis_title = "Y (µm)",
-    legend_title = "Mineral",
+    template="plotly_white",
+    height=800,
+    xaxis_title="X (µm)",
+    yaxis_title="Y (µm)",
+    legend_title="Mineral",
+    meta={"map_layer_key":f"overlay::{sample}::{run}"},
 )
 figure.update_yaxes(scaleanchor="x")
-render_chart(figure, width = "stretch")
+render_chart(figure, width="stretch")
 if summary:
-    st.dataframe(summary, width="stretch", hide_index = True)
+    st.dataframe(summary, width="stretch", hide_index=True)
