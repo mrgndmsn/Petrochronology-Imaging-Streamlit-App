@@ -1,34 +1,33 @@
 from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-import plotly.express as ps
+import plotly.express as px
 import plotly.graph_objects as go
 
 from .geochronology import concordia_curve
 
 
-
-
 def map_figure(
     layer,
     labels=None,
-    invert_x = False,
-    invert_y = False,
-    vmin = None,
-    vmax = None,
-    selections = None,
-    grain_shapes = None,
-    manual_centers = None,
-    radial_spokes = 0,
-    selectable = False,
-    maximum_selection_points = 40_000,
-    colorscale = "Viridis",
-    scale_bar_um = 0,
-    show_colorbar = True,
-    scale_bar_color = "white",
-    scale_bar_width = 5,
-    scale_bar_position = "Bottom left",
-    log_color = False,
+    invert_x=False,
+    invert_y=False,
+    vmin=None,
+    vmax=None,
+    selections=None,
+    grain_shapes=None,
+    manual_centers=None,
+    radial_spokes=0,
+    selectable=False,
+    maximum_selection_points=None,
+    colorscale="Viridis",
+    scale_bar_um=0,
+    show_colorbar=True,
+    scale_bar_color="white",
+    scale_bar_width=5,
+    scale_bar_position="Bottom left",
+    log_color=False,
 ):
     figure = go.Figure()
     display_values = layer.values
@@ -38,23 +37,23 @@ def map_figure(
         vmax = np.log10(vmax) if vmax is not None and vmax > 0 else None
     if "x_grid" in layer.metadata:
         xx, yy = layer.coordinate_grids()
-        figure.add_trace(go.Scattergl(x = xx.ravel(),y = yy.ravel(),mode = 'markers',customdata = layer.values.ravel(),
-            marker = dict(symbol = 'square',size = 7,color = display_values.ravel(),colorscale = colorscale,
-                        cmin = vmin,cmax=vmax,showscale = show_colorbar,colorbar = dict(title = ("log10 " if log_color else "")+layer.channel)),
-            hovertemplate = "x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",name = layer.channel))
+        figure.add_trace(go.Scattergl(x=xx.ravel(),y=yy.ravel(),mode='markers',customdata=layer.values.ravel(),
+            marker=dict(symbol='square',size=7,color=display_values.ravel(),colorscale=colorscale,
+                        cmin=vmin,cmax=vmax,showscale=show_colorbar,colorbar=dict(title=("log10 " if log_color else "")+layer.channel)),
+            hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",name=layer.channel))
     else:
         figure.add_trace(
             go.Heatmap(
-                z = display_values,
-                customdata = layer.values,
-                x = layer.x,
-                y = layer.y,
-                colorscale = colorscale,
-                zmin = vmin,
-                zmax = vmax,
-                colorbar = {"title": ("log10 " if log_color else "") + layer.channel},
-                showscale = show_colorbar,
-                hovertemplate = "x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",
+                z=display_values,
+                customdata=layer.values,
+                x=layer.x,
+                y=layer.y,
+                colorscale=colorscale,
+                zmin=vmin,
+                zmax=vmax,
+                colorbar={"title": ("log10 " if log_color else "") + layer.channel},
+                showscale=show_colorbar,
+                hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",
             )
         )
     if labels is not None and np.any(np.asarray(labels) > 0):
@@ -62,12 +61,12 @@ def map_figure(
         yy, xx = np.where(boundary & (labels > 0))
         figure.add_trace(
             go.Scattergl(
-                x = layer.coordinates_at(yy,xx)[0],
-                y = layer.coordinates_at(yy,xx)[1],
-                mode = "markers",
-                marker = {"size": 2, "color": "white"},
-                name = "Grain boundaries",
-                hoverinfo = "skip",
+                x=layer.coordinates_at(yy,xx)[0],
+                y=layer.coordinates_at(yy,xx)[1],
+                mode="markers",
+                marker={"size": 2, "color": "white"},
+                name="Grain boundaries",
+                hoverinfo="skip",
             )
         )
     _add_selection_overlays(figure, selections or {})
@@ -91,26 +90,28 @@ def map_figure(
         y0 = (ymax - 0.05 * (ymax - ymin)) if top else (ymin + 0.05 * (ymax - ymin))
         figure.add_shape(
             type="line",
-            x0 = x0,
-            x1 = x0 + float(scale_bar_um),
-            y0 = y0,
-            y1 = y0,
-            line = {"color": scale_bar_color, "width": float(scale_bar_width)},
+            x0=x0,
+            x1=x0 + float(scale_bar_um),
+            y0=y0,
+            y1=y0,
+            line={"color": scale_bar_color, "width": float(scale_bar_width)},
         )
         figure.add_annotation(
-            x = x0 + float(scale_bar_um) / 2,
-            y = y0,
-            text = f"{scale_bar_um:g} µm",
-            showarrow = False,
-            yshift = 14,
-            font = {"color": scale_bar_color},
+            x=x0 + float(scale_bar_um) / 2,
+            y=y0,
+            text=f"{scale_bar_um:g} µm",
+            showarrow=False,
+            yshift=14,
+            font={"color": scale_bar_color},
         )
     figure.update_layout(
-        template="plotly_white", height=700, margin=dict(l=20, r=20, t=35, b=20)
+        template="plotly_white", height=700, margin=dict(l=20, r=20, t=35, b=20),
+        uirevision=layer.key, clickmode="event+select",
+        meta={"map_layer_key": layer.key}
     )
-    figure.update_xaxes(title="X (µm)", autorange="reversed" if invert_x else True)
+    figure.update_xaxes(title="X (µm)", autorange="reversed" if invert_x else True, constrain="domain")
     figure.update_yaxes(
-        title="Y (µm)", autorange="reversed" if invert_y else True, scaleanchor="x"
+        title="Y (µm)", autorange="reversed" if invert_y else True, scaleanchor="x", constrain="domain"
     )
     return figure
 
@@ -119,7 +120,7 @@ def _add_selection_surface(figure, layer, maximum_points):
     """Add a light WebGL sampling grid so Plotly can report click/box/lasso events."""
     rows, columns = layer.values.shape
     total = rows * columns
-    stride = max(1, int(np.ceil(np.sqrt(total / max(1, int(maximum_points))))))
+    stride = 1 if maximum_points is None else max(1, int(np.ceil(np.sqrt(total / max(1, int(maximum_points))))))
     rr, cc = np.mgrid[0:rows:stride, 0:columns:stride]
     finite = np.isfinite(layer.values[rr, cc])
     rr, cc = rr[finite], cc[finite]
@@ -291,31 +292,31 @@ def wetherill_figure(frame, r68, r75, e68=None, e75=None, color=None):
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
-            x = curve68,
-            y = curve75,
-            mode = "lines",
-            name = "Concordia",
-            line = {"color": "black", "width": 1.5},
+            x=curve68,
+            y=curve75,
+            mode="lines",
+            name="Concordia",
+            line={"color": "black", "width": 1.5},
         )
     )
     marker_color = frame[color] if color and color in frame else None
     figure.add_trace(
         go.Scatter(
-            x = pd.to_numeric(frame[r68], errors = "coerce"),
-            y = pd.to_numeric(frame[r75], errors = "coerce"),
+            x=pd.to_numeric(frame[r68], errors="coerce"),
+            y=pd.to_numeric(frame[r75], errors="coerce"),
             error_x=(
-                {"array": pd.to_numeric(frame[e68], errors = "coerce"), "visible": True}
+                {"array": pd.to_numeric(frame[e68], errors="coerce"), "visible": True}
                 if e68
                 else None
             ),
-            error_y = (
-                {"array": pd.to_numeric(frame[e75], errors = "coerce"), "visible": True}
+            error_y=(
+                {"array": pd.to_numeric(frame[e75], errors="coerce"), "visible": True}
                 if e75
                 else None
             ),
-            mode = "markers",
-            name = "Analyses",
-            text = marker_color,
+            mode="markers",
+            name="Analyses",
+            text=marker_color,
             marker=(
                 {"size": 7, "color": marker_color}
                 if marker_color is not None
@@ -332,28 +333,18 @@ def wetherill_figure(frame, r68, r75, e68=None, e75=None, color=None):
     ty = np.expm1(9.8485e-10 * tick_years)
     figure.add_trace(
         go.Scatter(
-            x = tx,
-            y = ty,
-            text = [f"{a:g}" for a in tick_ages],
-            mode = "text",
-            textposition = "top center",
-            showlegend = False,
+            x=tx,
+            y=ty,
+            text=[f"{a:g}" for a in tick_ages],
+            mode="text",
+            textposition="top center",
+            showlegend=False,
         )
     )
     figure.update_layout(
-        template = "plotly_white",
-        height = 700,
-        xaxis_title = "²⁰⁶Pb/²³⁸U",
-        yaxis_title = "²⁰⁷Pb/²³⁵U",
+        template="plotly_white",
+        height=700,
+        xaxis_title="²⁰⁶Pb/²³⁸U",
+        yaxis_title="²⁰⁷Pb/²³⁵U",
     )
     return figure
-
-
-
-
-
-
-
-
-
-
