@@ -21,11 +21,7 @@ from core.selections import (
 )
 from core.state import initialize_state, layer_options
 
-
-
-
-
-st.set_page_config(page_title = "Selections and profiles", page_icon = "✏️", layout = "wide")
+st.set_page_config(page_title="Selections and profiles", page_icon="✏️", layout="wide")
 initialize_state()
 st.title("Domains, spots, and profiles")
 options = layer_options()
@@ -45,9 +41,9 @@ mode, name_column, size_column = st.columns([1, 1, 1])
 draw_mode = mode.selectbox(
     "Tool", ["Rectangle domain", "Lasso domain", "Spot", "Profile vertices"]
 )
-direct_name = name_column.text_input("Name", "Domain 1", key = "direct_name")
+direct_name = name_column.text_input("Name", "Domain 1", key="direct_name")
 direct_size = size_column.number_input(
-    "Spot radius / profile half-width (µm)", min_value = 0.0, value = 0.0, key = "direct_size"
+    "Spot radius / profile half-width (µm)", min_value=0.0, value=0.0, key="direct_size"
 )
 selection_modes = {
     "Rectangle domain": ("box",),
@@ -55,10 +51,18 @@ selection_modes = {
     "Spot": ("points",),
     "Profile vertices": ("points",),
 }
+drawing_figure = map_figure(layer, selections=matching_overlays, selectable=True)
+draft_vertices=st.session_state.get(f"profile_vertices::{layer.key}", [])
+if draw_mode == "Profile vertices" and draft_vertices:
+    drawing_figure.add_scatter(x=[p[0] for p in draft_vertices],y=[p[1] for p in draft_vertices],
+        mode="lines+markers+text",text=[str(i+1) for i in range(len(draft_vertices))],
+        textposition="top center",line=dict(color="cyan"),marker=dict(size=9),name="Draft profile")
+drawing_figure.update_layout(dragmode={"Rectangle domain":"select", "Lasso domain":"lasso", "Spot":"pan", "Profile vertices":"pan"}[draw_mode])
+st.caption("Rectangle/lasso: drag on the map, then save below. Spot/profile: click a measured pixel, then save the spot or add the vertex. Use the toolbar to zoom/pan, then Box Select or Lasso Select to resume drawing. Profiles use successive clicked vertices.")
 event = render_chart(
-    map_figure(layer, selections = matching_overlays, selectable = True),
-    width = "stretch",
-    key = f"selection_map::{layer.key}",
+    drawing_figure,
+    width="stretch",
+    key=f"selection_map::{layer.key}",
     on_select="rerun",
     selection_mode=selection_modes[draw_mode],
 )
@@ -88,7 +92,7 @@ direct_selection = event_selection(event)
 created = None
 if draw_mode == "Rectangle domain":
     box = first_geometry(direct_selection, "box")
-    if box and st.button("Save drawn rectangle", type = "primary"):
+    if box and st.button("Save drawn rectangle", type="primary"):
         created = (
             direct_name,
             selected_pixel_table(
@@ -102,7 +106,7 @@ if draw_mode == "Rectangle domain":
         )
 elif draw_mode == "Lasso domain":
     lasso = first_geometry(direct_selection, "lasso")
-    if lasso and st.button("Save drawn lasso", type = "primary"):
+    if lasso and st.button("Save drawn lasso", type="primary"):
         vertices = list(zip(map(float, lasso["x"]), map(float, lasso["y"])))
         created = (
             direct_name,
@@ -112,7 +116,7 @@ elif draw_mode == "Lasso domain":
         )
 elif draw_mode == "Spot":
     selected = selected_point(direct_selection)
-    if selected and st.button("Save clicked spot", type = "primary"):
+    if selected and st.button("Save clicked spot", type="primary"):
         created = (
             direct_name,
             selected_pixel_table(
@@ -127,13 +131,13 @@ else:
     st.session_state.setdefault(draft_key, [])
     selected = selected_point(direct_selection)
     add, undo, clear = st.columns(3)
-    if add.button("Add clicked vertex", disabled = selected is None):
+    if add.button("Add clicked vertex", disabled=selected is None):
         st.session_state[draft_key].append(selected)
         st.rerun()
-    if undo.button("Undo vertex", disabled = not st.session_state[draft_key]):
+    if undo.button("Undo vertex", disabled=not st.session_state[draft_key]):
         st.session_state[draft_key].pop()
         st.rerun()
-    if clear.button("Clear vertices", disabled = not st.session_state[draft_key]):
+    if clear.button("Clear vertices", disabled=not st.session_state[draft_key]):
         st.session_state[draft_key] = []
         st.rerun()
     st.caption(
@@ -173,10 +177,10 @@ tab_rect, tab_lasso, tab_spot, tab_profile = st.tabs(
 with tab_rect:
     c = st.columns(4)
     x0 = c[0].number_input("X minimum")
-    x1 = c[1].number_input("X maximum", value = float(layer.x.max()))
+    x1 = c[1].number_input("X maximum", value=float(layer.x.max()))
     y0 = c[2].number_input("Y minimum")
-    y1 = c[3].number_input("Y maximum", value = float(layer.y.max()))
-    name = st.text_input("Domain name", "Domain 1", key = "rect_name")
+    y1 = c[3].number_input("Y maximum", value=float(layer.y.max()))
+    name = st.text_input("Domain name", "Domain 1", key="rect_name")
     if st.button("Create rectangular domain"):
         created = (
             name,
@@ -185,8 +189,8 @@ with tab_rect:
             ),
         )
 with tab_lasso:
-    raw = st.text_area("Polygon vertices (x,y; x,y; ...)", key = "poly_points")
-    name = st.text_input("Domain name", "Lasso 1", key = "lasso_name")
+    raw = st.text_area("Polygon vertices (x,y; x,y; ...)", key="poly_points")
+    name = st.text_input("Domain name", "Lasso 1", key="lasso_name")
     if st.button("Create lasso domain"):
         try:
             created = (
@@ -201,7 +205,7 @@ with tab_spot:
     c = st.columns(3)
     x = c[0].number_input("Spot X")
     y = c[1].number_input("Spot Y")
-    radius = c[2].number_input("Radius (µm)", min_value = 0.0)
+    radius = c[2].number_input("Radius (µm)", min_value=0.0)
     name = st.text_input("Spot name", "Spot 1")
     if st.button("Pick spot"):
         created = (
@@ -210,12 +214,12 @@ with tab_spot:
         )
 with tab_profile:
     raw = st.text_area(
-        "Profile vertices in order (x,y; x,y; ...)", key = "profile_points"
+        "Profile vertices in order (x,y; x,y; ...)", key="profile_points"
     )
-    buffer = st.number_input("Half-width buffer (µm)", min_value = 0.0)
+    buffer = st.number_input("Half-width buffer (µm)", min_value=0.0)
     name = st.text_input("Profile name", "Profile 1")
     sampling = st.selectbox("Profile sampling", ["Buffered pixels", "Bilinear interpolation", "Nearest interpolation"])
-    spacing = st.number_input("Interpolated sample spacing (µm)", min_value = .000001, value=float(min(layer.pixel_size)))
+    spacing = st.number_input("Interpolated sample spacing (µm)", min_value=.000001, value=float(min(layer.pixel_size)))
     if st.button("Create buffered multi-segment profile"):
         try:
             created = (name, profile_table(layer, points(raw), buffer) if sampling == "Buffered pixels" else
@@ -251,20 +255,20 @@ matching = {
     if k.startswith(layer.key + "::")
 }
 if st.button(
-    "Undo last selection change", disabled = not st.session_state.selection_history
+    "Undo last selection change", disabled=not st.session_state.selection_history
 ):
     previous = st.session_state.selection_history.pop()
     st.session_state.selections, st.session_state.tables, st.session_state.active_table_name = previous
     st.rerun()
 if matching:
     chosen = st.selectbox(
-        "Saved selection", matching, format_func = lambda key: key.split("::")[-1]
+        "Saved selection", matching, format_func=lambda key: key.split("::")[-1]
     )
     table = matching[chosen]
     st.dataframe(
-        pd.DataFrame([selection_summary(table)]), hide_index = True, width = "stretch"
+        pd.DataFrame([selection_summary(table)]), hide_index=True, width="stretch"
     )
-    st.dataframe(table, width = "stretch", hide_index = True)
+    st.dataframe(table, width="stretch", hide_index=True)
     if "distance_along_profile_um" in table:
         skip = {
             "x",
@@ -278,7 +282,7 @@ if matching:
             col
             for col in table.columns
             if col not in skip
-            and pd.to_numeric(table[col], errors = "coerce").notna().any()
+            and pd.to_numeric(table[col], errors="coerce").notna().any()
         ]
         selected_channels = st.multiselect(
             "Profile channels", channels, default=channels[: min(3, len(channels))]
@@ -288,7 +292,7 @@ if matching:
         )
         plot_parts = []
         for channel in selected_channels:
-            values = pd.to_numeric(table[channel], errors = "coerce")
+            values = pd.to_numeric(table[channel], errors="coerce")
             part = pd.DataFrame(
                 {
                     "distance_um": table.distance_along_profile_um,
@@ -298,26 +302,26 @@ if matching:
             )
             if bin_count:
                 part["distance_bin"] = pd.cut(
-                    part.distance_um, int(bin_count), labels = False, duplicates = "drop"
+                    part.distance_um, int(bin_count), labels=False, duplicates="drop"
                 )
                 part = (
-                    part.groupby(["channel", "distance_bin"], dropna = False)
-                    .agg(distance_um = ("distance_um", "mean"), value = ("value", "mean"))
+                    part.groupby(["channel", "distance_bin"], dropna=False)
+                    .agg(distance_um=("distance_um", "mean"), value=("value", "mean"))
                     .reset_index()
                 )
             plot_parts.append(part)
         if plot_parts:
-            plot_data = pd.concat(plot_parts, ignore_index = True)
+            plot_data = pd.concat(plot_parts, ignore_index=True)
             render_chart(
                 px.line(
                     plot_data,
-                    x = "distance_um",
-                    y = "value",
-                    color = "channel",
-                    markers = True,
-                    template = "plotly_white",
+                    x="distance_um",
+                    y="value",
+                    color="channel",
+                    markers=True,
+                    template="plotly_white",
                 ),
-                width = "stretch",
+                width="stretch",
             )
     a, b = st.columns(2)
     a.download_button(
@@ -329,18 +333,3 @@ if matching:
         )
         del st.session_state.selections[chosen]
         st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
