@@ -47,7 +47,7 @@ def mineral_variability_table(point_layers, channels):
         for channel in channels:
             if channel not in layer.frame:
                 continue
-            values = pd.to_numeric(layer.frame[channel], errors="coerce").dropna()
+            values = pd.to_numeric(layer.frame[channel], errors="coerce").replace([np.inf,-np.inf],np.nan).dropna()
             if values.empty:
                 continue
             mean = values.mean()
@@ -242,3 +242,45 @@ def grouped_upb_means(
 
 
 
+
+
+def ordered_channels(selected, order_text):
+    order=[x.strip() for x in order_text.splitlines() if x.strip()]
+    if len(set(order))!=len(order):raise ValueError('Each channel can appear only once in the order.')
+    if set(order)-set(selected):raise ValueError('Order contains channels not selected above.')
+    return order+[x for x in selected if x not in order]
+
+
+def element_fraction_table(point_layers, channels, statistic='mean'):
+    """Positive concentration contributions; not whole-rock mass/volume fractions."""
+    stats=mineral_variability_table(point_layers,channels)
+    if stats.empty:return stats
+    stats['value']=stats['mean'] if statistic=='mean' else stats['mean']*stats['n']
+    stats['value']=stats.value.where(np.isfinite(stats.value)&(stats.value>0),0.)
+    total=stats.groupby(['sample_id','run_id','channel']).value.transform('sum')
+    stats['percent']=100*stats.value/total.replace(0,np.nan)
+    stats['_order']=stats.channel.map({c:i for i,c in enumerate(channels)})
+    return stats.sort_values(['sample_id','run_id','_order','mineral_id']).drop(columns='_order').reset_index(drop=True)
+
+
+def mineral_nearest_neighbor_tables(layers, maximum=5000):
+    from .selections import nearest_neighbor_stats
+    rng=np.random.default_rng(1)
+    groups={}
+    for layer in layers.values():
+        xy=layer.frame[[layer.x_column,layer.y_column]].apply(pd.to_numeric,errors='coerce').replace([np.inf,-np.inf],np.nan).dropna().to_numpy(float)
+        if len(xy)>maximum:xy=xy[rng.choice(len(xy),int(maximum),replace=False)]
+        groups.setdefault((layer.sample_id,layer.run_id),{})[layer.mineral_id]=xy
+    parts=[];summaries=[]
+    for (sample,run),minerals in groups.items():
+        for source,a in minerals.items():
+            for target,b in minerals.items():
+                if source==target:continue
+                pair=nearest_neighbor_stats(a,b)
+                if pair.empty:continue
+                info=dict(sample_id=sample,run_id=run,from_mineral=source,to_mineral=target,pair_direction=f'{source} → {target}')
+                for c,v in info.items():pair[c]=v
+                parts.append(pair)
+                d=pair.nearest_distance_um
+                summaries.append(dict(info,n_from_sampled=len(a),n_to_sampled=len(b),mean_nn_distance_um=d.mean(),median_nn_distance_um=d.median(),sd_nn_distance_um=d.std(),minimum_um=d.min(),maximum_um=d.max(),p05_um=d.quantile(.05),p95_um=d.quantile(.95)))
+    return (pd.concat(parts,ignore_index=True) if parts else pd.DataFrame()),pd.DataFrame(summaries)
