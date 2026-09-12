@@ -12,6 +12,8 @@ def static_figure_bytes(figure, format='png', width=1200, height=800, scale=2):
 
 def render_chart(figure, **kwargs):
     import streamlit as st
+    from .mineral_colors import mineral_palette, apply_mineral_colors
+    apply_mineral_colors(figure,mineral_palette(st.session_state))
     count=st.session_state.get('_figure_export_count',0)
     st.session_state['_figure_export_count']=count+1
     page=Path(inspect.currentframe().f_back.f_code.co_filename).stem
