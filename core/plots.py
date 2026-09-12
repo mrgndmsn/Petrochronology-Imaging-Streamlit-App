@@ -107,7 +107,8 @@ def map_figure(
     figure.update_layout(
         template="plotly_white", height=700, margin=dict(l=20, r=20, t=35, b=20),
         uirevision=layer.key, clickmode="event+select",
-        meta={"map_layer_key": layer.key}
+        meta={"map_layer_key": layer.key},
+        newselection=dict(line=dict(color="red",width=2,dash="solid"))
     )
     figure.update_xaxes(title="X (µm)", autorange="reversed" if invert_x else True, constrain="domain")
     figure.update_yaxes(
@@ -139,12 +140,6 @@ def _add_selection_surface(figure, layer, maximum_points):
 
 
 def _add_selection_overlays(figure, selections):
-    colors = {
-        "rectangle": "#ff8c00",
-        "lasso": "#e83e8c",
-        "spot": "#00ffff",
-        "profile": "#ffffff",
-    }
     for name, table in selections.items():
         if table is None or len(table) == 0 or "x" not in table or "y" not in table:
             continue
@@ -153,7 +148,24 @@ def _add_selection_overlays(figure, selections):
             if "selection_type" in table
             else ("profile" if "distance_along_profile_um" in table else "selection")
         )
-        color = colors.get(kind, "#ffdd33")
+        color = '#ff0000'
+        geometry=table.attrs.get('selection_geometry')
+        if geometry:
+            coords=np.asarray(geometry['coordinates'],float)
+            shape=geometry['kind']
+            if shape=='rectangle':
+                x0,x1,y0,y1=coords
+                xs,ys=[x0,x1,x1,x0,x0],[y0,y0,y1,y1,y0]
+            elif shape=='spot':
+                x,y,r=coords
+                angles=np.linspace(0,2*np.pi,129)
+                xs,ys=x+r*np.cos(angles),y+r*np.sin(angles)
+            else:
+                if shape=='lasso':coords=np.vstack([coords,coords[0]])
+                xs,ys=coords[:,0],coords[:,1]
+            figure.add_scatter(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
+                name=str(name).split('::')[-1],legendgroup='selection::'+str(name))
+            continue
         if kind == "profile":
             ordered = table.sort_values("distance_along_profile_um")
             figure.add_trace(
@@ -177,30 +189,29 @@ def _add_selection_overlays(figure, selections):
                 )
             )
         elif {"row_index", "column_index"}.issubset(table.columns):
-            rc = set(zip(table.row_index.astype(int), table.column_index.astype(int)))
-            boundary = [
-                (r, c)
-                for r, c in rc
-                if any(
-                    (r + dr, c + dc) not in rc
-                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1))
-                )
-            ]
-            if boundary:
-                lookup = table.drop_duplicates(["row_index", "column_index"]).set_index(
-                    ["row_index", "column_index"]
-                )
-                xs = [lookup.loc[(r, c), "x"] for r, c in boundary]
-                ys = [lookup.loc[(r, c), "y"] for r, c in boundary]
-                figure.add_trace(
-                    go.Scattergl(
-                        x=xs,
-                        y=ys,
-                        mode="markers",
-                        marker={"size": 3, "color": color},
-                        name=str(name),
-                    )
-                )
+            identities=[c for c in ('sample_id','mineral_id','run_id') if c in table]
+            groups=table.groupby(identities,dropna=False) if identities else [('all',table)]
+            xs,ys=[],[]
+            for _,part in groups:
+                source=str(part.source_layer_key.iloc[0]) if 'source_layer_key' in part else None
+                sizes=table.attrs.get('pixel_sizes',{})
+                if source is None and all(c in part for c in ('sample_id','mineral_id','run_id','channel')):
+                    source='::'.join(str(part[c].iloc[0]) for c in ('sample_id','mineral_id','run_id','channel'))
+                def step(column):
+                    d=np.diff(np.sort(part[column].unique()))
+                    return float(np.min(d[d>0])) if np.any(d>0) else 1.
+                dx,dy=sizes.get(source,(step('x'),step('y')))
+                part=part.drop_duplicates(['row_index','column_index'])
+                cells=set(zip(part.row_index.astype(int),part.column_index.astype(int)))
+                for row in part.itertuples():
+                    r,c=int(row.row_index),int(row.column_index)
+                    x0,x1,y0,y1=row.x-dx/2,row.x+dx/2,row.y-dy/2,row.y+dy/2
+                    for neighbor,ends in [((r,c-1),(x0,y0,x0,y1)),((r,c+1),(x1,y0,x1,y1)),
+                                          ((r-1,c),(x0,y0,x1,y0)),((r+1,c),(x0,y1,x1,y1))]:
+                        if neighbor not in cells:
+                            xa,ya,xb,yb=ends;xs.extend([xa,xb,None]);ys.extend([ya,yb,None])
+            figure.add_scatter(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
+                name=str(name).split('::')[-1],legendgroup='selection::'+str(name))
 
 
 def _add_grain_centers_and_spokes(figure, shapes, manual_centers, spoke_count, layer=None, labels=None):
@@ -299,32 +310,13 @@ def wetherill_figure(frame, r68, r75, e68=None, e75=None, color=None):
             line={"color": "black", "width": 1.5},
         )
     )
-    marker_color = frame[color] if color and color in frame else None
-    figure.add_trace(
-        go.Scatter(
-            x=pd.to_numeric(frame[r68], errors="coerce"),
-            y=pd.to_numeric(frame[r75], errors="coerce"),
-            error_x=(
-                {"array": pd.to_numeric(frame[e68], errors="coerce"), "visible": True}
-                if e68
-                else None
-            ),
-            error_y=(
-                {"array": pd.to_numeric(frame[e75], errors="coerce"), "visible": True}
-                if e75
-                else None
-            ),
-            mode="markers",
-            name="Analyses",
-            text=marker_color,
-            marker=(
-                {"size": 7, "color": marker_color}
-                if marker_color is not None
-                and pd.api.types.is_numeric_dtype(marker_color)
-                else {"size": 7}
-            ),
-        )
-    )
+    points=px.scatter(frame,x=r68,y=r75,error_x=e68,error_y=e75,color=color,
+        template='plotly_white')
+    for trace in points.data:
+        trace.marker.size=7
+        if not color:trace.name='Analyses'
+        figure.add_trace(trace)
+    if color:figure.update_layout(legend_title=color)
     tick_ages = np.array(
         [0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
     )
