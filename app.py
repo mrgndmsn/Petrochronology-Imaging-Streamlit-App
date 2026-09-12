@@ -58,11 +58,13 @@ with st.expander("Import data", expanded=True):
         selected = st.selectbox("File to configure", [f.name for f in files])
         uploaded = next(f for f in files if f.name == selected)
         try:
-            frame = read_table(uploaded.getvalue(), uploaded.name)
+            frame = read_table(uploaded.getvalue(), uploaded.name, nrows=200)
             st.dataframe(frame.head(20), width="stretch")
+            st.caption("Preview only: up to 200 rows are read while configuring. The complete file is read when you click Import configured data.")
             cfg = assignment(f"table_{selected}")
             mode = st.radio("Import as", ["Raster channels", "Point layer", "Analysis table"], horizontal=True)
-            numbers = numeric_columns(frame)
+            # Preview rows may be empty for valid chemistry channels. Offer every column.
+            numbers = list(frame.columns)
             choices = ["None"] + list(frame.columns)
             xcol = st.selectbox("X coordinate column", choices)
             ycol = st.selectbox("Y coordinate column", choices)
@@ -74,6 +76,7 @@ with st.expander("Import data", expanded=True):
                 st.caption("For sparse or drifting scan coordinates. Uses your explicit X/Y pixel sizes and the minimum coordinates as the grid origin. Values sharing a cell are averaged; unmeasured cells stay empty. The original table is retained.")
             if st.button("Import configured data", type="primary"):
                 sample, mineral, run, dx, dy = validate_assignment(*cfg)
+                frame = read_table(uploaded.getvalue(), uploaded.name)
                 table = frame.copy()
                 for col, value in zip(("sample_id", "mineral_id", "run_id"), (sample, mineral, run)):
                     table[col] = value
