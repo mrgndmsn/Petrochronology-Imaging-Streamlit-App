@@ -41,6 +41,9 @@ project_file = st.file_uploader("Open a saved project", type=["zip"], key="proje
 if project_file is not None and st.button("Load complete project"):
     try:
         restored = load_project(project_file.getvalue())
+        for widget_key in list(st.session_state):
+            if widget_key.startswith("mineral_color::"):
+                del st.session_state[widget_key]
         for key, value in restored.items():
             st.session_state[key] = value
         st.session_state.table_history = {}
@@ -202,7 +205,7 @@ if records or st.session_state.tables:
             with st.spinner("Preparing project snapshot…"):
                 data = save_project(st.session_state.layers, st.session_state.tables,
                     st.session_state.grain_results, st.session_state.selections, st.session_state.manual_grain_centers,
-                    st.session_state.point_layers, st.session_state.calculation_definitions)
+                    st.session_state.point_layers, st.session_state.calculation_definitions, st.session_state.mineral_colors)
             from datetime import datetime
             st.session_state.prepared_project_download = (data, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         except Exception as exc:
