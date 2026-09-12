@@ -55,6 +55,13 @@ def ree_envelope(stats, mode):
     if mode in ('sd1', 'sd2'):
         k = 1 if mode == 'sd1' else 2
         return mean - k*sd, mean + k*sd
+    if mode == 'ci95':
+        from scipy.stats import t
+        n = stats['n'].to_numpy(float)
+        width = np.full_like(mean, np.nan)
+        valid = n > 1
+        width[valid] = t.ppf(.975, n[valid]-1)*sd[valid]/np.sqrt(n[valid])
+        return mean-width, mean+width
     if mode in ('p16_84', 'p025_975'):
         suffix = '1' if mode == 'p16_84' else '2'
         return stats['lower'+suffix].to_numpy(float), stats['upper'+suffix].to_numpy(float)
