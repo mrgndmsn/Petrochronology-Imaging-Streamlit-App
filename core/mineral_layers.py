@@ -24,24 +24,24 @@ def raster_mineral_points(layers, reference_keys, rule = 'finite', threshold = 0
 
 def mineral_layers_ui(state, key):
     import streamlit as st
-    if not state.layers: return state.point_layers
-    choices = ['Point tables','Raster mineral maps'] if state.point_layers else ['Raster mineral maps']
-    mode = st.selectbox('Mineral data source',choices,key=f'{key}_source')
-    if mode == 'Point tables': return state.point_layers
-    groups = {}
-    for layer in state.layers.values(): groups.setdefault((layer.sample_id,layer.mineral_id,layer.run_id),[]).append(layer)
-    refs = []
-    for identity, group in groups.items():
-        labels = {l.key:l.channel for l in group}
-        selected = st.selectbox('Presence channel | '+' | '.join(identity),[l.key for l in group],
-                              format_func = labels.get,key = f'{key}_presence_{identity}')
-        refs.append(selected)
-    rule = st.selectbox('Presence rule',['Finite pixels','Greater than threshold'],key = f'{key}_presence_rule')
-    threshold = st.number_input('Mineral presence threshold',value = 0.,key = f'{key}_presence_threshold')
-    return raster_mineral_points(state.layers,refs,'finite' if rule == 'Finite pixels' else 'greater_than',threshold)
-
-
-
-
-
-
+    from .ui_filters import filter_layers_ui
+    choices=['All imported minerals']
+    if state.point_layers:choices.append('Point tables')
+    if state.layers:choices.append('Raster mineral maps')
+    mode=st.selectbox('Mineral data source',choices,key=f'{key}_source')
+    points=dict(state.point_layers) if mode!='Raster mineral maps' else {}
+    if state.layers and mode!='Point tables':
+        groups={}
+        for layer in state.layers.values():
+            identity=(layer.sample_id,layer.mineral_id,layer.run_id)
+            if mode=='All imported minerals' and any((p.sample_id,p.mineral_id,p.run_id)==identity for p in points.values()):continue
+            groups.setdefault(identity,[]).append(layer)
+        refs=[]
+        with st.expander('Raster presence settings'):
+            for identity,group in groups.items():
+                labels={l.key:l.channel for l in group}
+                refs.append(st.selectbox('Presence channel | '+' | '.join(identity),list(labels),format_func=labels.get,key=f'{key}_presence_{identity}'))
+            rule=st.selectbox('Presence rule',['Finite pixels','Greater than threshold'],key=f'{key}_presence_rule')
+            threshold=st.number_input('Mineral presence threshold',value=0.,key=f'{key}_presence_threshold')
+        points.update(raster_mineral_points(state.layers,refs,'finite' if rule=='Finite pixels' else 'greater_than',threshold))
+    return {p.key:p for p in filter_layers_ui(points.values(),key+'_filters')}
