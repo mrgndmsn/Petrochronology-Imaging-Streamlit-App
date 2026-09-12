@@ -4,6 +4,7 @@ from copy import deepcopy
 
 DEFAULTS = {
     "layers": {},
+    "mineral_colors": {},
     "point_layers": {},
     "tables": {},
     "grain_results": {},
