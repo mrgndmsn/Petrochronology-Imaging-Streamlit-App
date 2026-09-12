@@ -10,4 +10,4 @@ def map_view(figure, key, selection_modes=(), selectable = False):
         revision = str(figure.layout.uirevision), mode = mode,
         pointMode = 'points' in selection_modes,selectable=selectable,key=key,default=None)
     selection = result.get('selection',{}) if isinstance(result,dict) and result.get('mode') == mode else {}
-    return SimpleNamespace(selection = selection)
+    return SimpleNamespace(selection=selection,event_id=result.get('event_id') if isinstance(result,dict) else None)
