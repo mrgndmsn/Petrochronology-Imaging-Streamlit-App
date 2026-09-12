@@ -108,6 +108,7 @@ with st.expander("Import aligned matrix files"):
     st.write("Select only co-registered channels for one sample/mineral/run. Different shapes are rejected. "
              "Cropping keeps the original spatial offset. Filenames are channel suggestions only.")
     files = st.file_uploader("Headerless matrix CSV files", type=["csv"], accept_multiple_files=True, key="matrix_files")
+    st.caption("For large matrix stacks, upload small batches. Uploaded CSV files also consume server memory. For scaled matrices, collapse repeated coordinates to reduce the stored raster size.")
     cfg = assignment("matrix")
     cols = st.columns(2)
     ox = cols[0].number_input("Matrix X origin (µm)", value=0.0)
@@ -126,11 +127,26 @@ with st.expander("Import aligned matrix files"):
         channels[f.name] = st.text_input(f"Channel for {f.name}", matrix_channel_name(f.name), key=f"matrix_channel_{f.name}")
     if st.button("Import aligned matrices", disabled=not files):
         try:
-            records = [(channels[f.name], f.name, read_numeric_matrix(f.getvalue())) for f in files]
-            layers = matrix_layers(records, *cfg, origin_x_um=ox, origin_y_um=oy, crop=crop,
-                x_coordinates=read_numeric_matrix(x_reference.getvalue()) if x_reference is not None else None,
-                y_coordinates=read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None,
-                collapse_duplicates=collapse)
+            validate_assignment(*cfg)
+            names = [channels[f.name].strip() for f in files]
+            if len(set(names)) != len(names) or any(not n or "::" in n for n in names):
+                raise ValueError("Choose unique, nonempty channel names without ::.")
+            xcoords = read_numeric_matrix(x_reference.getvalue()) if x_reference is not None else None
+            ycoords = read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None
+            if collapse:
+                # Do not retain the entire expanded chemistry stack in memory.
+                layers = {}
+                for f in files:
+                    part = matrix_layers([(channels[f.name], f.name, read_numeric_matrix(f.getvalue()))],
+                        *cfg, origin_x_um=ox, origin_y_um=oy, crop=crop,
+                        x_coordinates=xcoords, y_coordinates=ycoords, collapse_duplicates=True)
+                    layers.update(part)
+            else:
+                records = [(channels[f.name], f.name, read_numeric_matrix(f.getvalue())) for f in files]
+                layers = matrix_layers(records, *cfg, origin_x_um=ox, origin_y_um=oy, crop=crop,
+                    x_coordinates=xcoords, y_coordinates=ycoords)
+                del records
+            del xcoords, ycoords
             commit_layers(layers)
             st.success(f"Imported {len(layers)} aligned channels.")
         except Exception as exc:
