@@ -20,16 +20,25 @@ def unique_columns(columns) -> list[str]:
     return result
 
 
-def read_table(data: bytes, filename: str) -> pd.DataFrame:
+def read_table(data: bytes, filename: str, nrows: int | None = None) -> pd.DataFrame:
+    """Read tabular data without expanding CSV text into Python row objects.
+
+    nrows is used for configuration previews; the complete file is read on import.
+    """
     suffix = Path(filename).suffix.lower()
     if suffix in {".xlsx", ".xls"}:
-        frame = pd.read_excel(BytesIO(data))
+        frame = pd.read_excel(BytesIO(data), nrows=nrows)
     else:
-        text = data.decode("utf-8-sig", errors="replace")
+        import csv
+        sample = data[:65536].decode("utf-8-sig", errors="replace")
+        # Sniff only complete lines from the small prefix, never the whole file.
+        sample = sample.rsplit("\n", 1)[0] if "\n" in sample else sample
         try:
-            frame = pd.read_csv(StringIO(text), sep=None, engine="python")
-        except Exception:
-            frame = pd.read_csv(StringIO(text))
+            delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+        except csv.Error:
+            delimiter = "\t" if suffix == ".tsv" else ","
+        frame = pd.read_csv(BytesIO(data), sep=delimiter, engine="c", nrows=nrows,
+                            encoding="utf-8-sig", encoding_errors="replace")
     frame.columns = unique_columns(frame.columns)
     return frame
 
