@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import numpy as np
 import pandas as pd
+
 from .models import GrainResult, MapLayer
 
 IDENTIFIER_COLUMNS = [
@@ -20,19 +22,17 @@ IDENTIFIER_COLUMNS = [
 ]
 
 
-
-
-
-
 def compatible_layers(reference: MapLayer, layers) -> list[MapLayer]:
     return [
         layer
         for layer in layers.values()
         if layer.sample_id == reference.sample_id
         and layer.run_id == reference.run_id
+        and layer.mineral_id == reference.mineral_id
         and layer.values.shape == reference.values.shape
         and np.allclose(layer.x, reference.x)
         and np.allclose(layer.y, reference.y)
+        and all(np.allclose(a,b) for a,b in zip(layer.coordinate_grids(),reference.coordinate_grids()))
     ]
 
 
@@ -44,8 +44,8 @@ def all_channel_pixel_table(reference: MapLayer, rows, columns, layers) -> pd.Da
             "sample_id": reference.sample_id,
             "mineral_id": reference.mineral_id,
             "run_id": reference.run_id,
-            "x": reference.x[columns],
-            "y": reference.y[rows],
+            "x": reference.coordinates_at(rows, columns)[0],
+            "y": reference.coordinates_at(rows, columns)[1],
             "row_index": rows,
             "column_index": columns,
         }
@@ -82,12 +82,12 @@ def grain_summary_all_channels(
     channels = [
         c
         for c in pixels.columns
-        if c not in metadata and pd.to_numeric(pixels[c], errors = "coerce").notna().any()
+        if c not in metadata and pd.to_numeric(pixels[c], errors="coerce").notna().any()
     ]
     for channel in channels:
-        values = pd.to_numeric(pixels[channel], errors = "coerce")
+        values = pd.to_numeric(pixels[channel], errors="coerce")
         stats = (
-            pixels.assign(_value = values)
+            pixels.assign(_value=values)
             .groupby("grain_id")
             ._value.agg(["mean", "std", "median", "count"])
         )
@@ -97,7 +97,7 @@ def grain_summary_all_channels(
             f"{channel}_median",
             f"{channel}_n",
         ]
-        summary = summary.merge(stats.reset_index(), on = "grain_id", how = "left")
+        summary = summary.merge(stats.reset_index(), on="grain_id", how="left")
     return summary
 
 
@@ -107,8 +107,8 @@ def enrich_selection(
     layers,
     grain_result: GrainResult | None = None,
 ) -> pd.DataFrame:
-    rows = pd.to_numeric(selection["row_index"], errors = "coerce").to_numpy(int)
-    columns = pd.to_numeric(selection["column_index"], errors = "coerce").to_numpy(int)
+    rows = pd.to_numeric(selection["row_index"], errors="coerce").to_numpy(int)
+    columns = pd.to_numeric(selection["column_index"], errors="coerce").to_numpy(int)
     table = all_channel_pixel_table(reference, rows, columns, layers)
     for column in selection.columns:
         if column not in table or column in {"selection_type", "selection_id"}:
@@ -130,11 +130,12 @@ def ellipse_radial_table(
     reference: MapLayer,
     result: GrainResult,
     layers,
-    grain_ids = None,
-    bins = 5,
-    core_max = 0.33,
-    rim_min = 0.67,
-    centers = None,
+    grain_ids=None,
+    bins=5,
+    core_max=0.33,
+    rim_min=0.67,
+    centers=None,
+    use_full_ellipse=False,
 ):
     ids = (
         set(map(int, grain_ids))
@@ -148,23 +149,33 @@ def ellipse_radial_table(
         gid = int(shape.grain_id)
         if gid not in ids:
             continue
-        rows, columns = np.where(result.labels == gid)
+        rows, columns = np.indices(result.labels.shape) if use_full_ellipse else np.where(result.labels == gid)
+        rows, columns = rows.ravel(), columns.ravel()
         if not len(rows):
             continue
         saved = centers.get(gid, centers.get(str(gid)))
         cx, cy = (
-            saved if saved is not None else (shape.centroid_x_um, shape.centroid_y_um)
+            saved if saved is not None else (shape.get("ellipse_center_x_um", shape.centroid_x_um), shape.get("ellipse_center_y_um", shape.centroid_y_um))
         )
         a = float(shape.grain_length_um) / 2
         b = float(shape.grain_width_um) / 2
-        theta = np.radians(float(shape.orientation_deg))
+        angle = float(shape.orientation_deg)
+        if saved is not None:
+            major, minor, angle = refit_moved_ellipse(reference, result, gid, saved)
+            a, b = major/2, minor/2
+        theta = np.radians(angle)
         ct, st = np.cos(theta), np.sin(theta)
-        dx = reference.x[columns] - cx
-        dy = reference.y[rows] - cy
+        xv, yv = reference.coordinates_at(rows, columns)
+        dx, dy = xv - cx, yv - cy
         xp = dx * ct + dy * st
         yp = -dx * st + dy * ct
         rn = np.sqrt((xp / a) ** 2 + (yp / b) ** 2)
+        if use_full_ellipse:
+            keep = np.isfinite(rn) & (rn <= 1)
+            rows, columns, rn = rows[keep], columns[keep], rn[keep]
         table = all_channel_pixel_table(reference, rows, columns, layers)
+        table["grain_pixel_in_detected_mask"] = result.labels[rows, columns] == gid
+        table["grain_pixel_in_fitted_ellipse"] = rn <= 1
         table["grain_id"] = gid
         table["grain_uid"] = (
             f"{reference.sample_id}:{reference.mineral_id}:{reference.run_id}:{gid}"
@@ -185,7 +196,7 @@ def ellipse_radial_table(
 
 
 def intensity_core_rim_labels(
-    table, value_column, low_quantile = 0.3, high_quantile = 0.7, high_values_are_rim = True
+    table, value_column, low_quantile=0.3, high_quantile=0.7, high_values_are_rim=True
 ):
     output = table.copy()
     output["core_rim_label"] = output.get("radial_zone", "unknown")
@@ -195,7 +206,7 @@ def intensity_core_rim_labels(
             output.loc[index, value_column], errors="coerce"
         ).to_numpy(float)
         radial = pd.to_numeric(
-            output.loc[index, "radial_distance_normalized"], errors = "coerce"
+            output.loc[index, "radial_distance_normalized"], errors="coerce"
         ).to_numpy(float)
         valid = np.isfinite(values) & np.isfinite(radial) & (radial <= 1)
         if valid.sum() < 10:
@@ -251,11 +262,11 @@ def spoke_profile_table(
     reference: MapLayer,
     result: GrainResult,
     layers,
-    grain_ids = None,
-    spoke_count = 8,
-    buffer_pixels = 1,
-    bins = 25,
-    centers = None,
+    grain_ids=None,
+    spoke_count=8,
+    buffer_pixels=1,
+    bins=25,
+    centers=None,
 ):
     ids = (
         set(map(int, grain_ids))
@@ -274,16 +285,18 @@ def spoke_profile_table(
         center = (
             tuple(saved)
             if saved is not None
-            else (float(shape.centroid_x_um), float(shape.centroid_y_um))
+            else (float(shape.get("ellipse_center_x_um", shape.centroid_x_um)), float(shape.get("ellipse_center_y_um", shape.centroid_y_um)))
         )
         grain = result.labels == gid
-        for spoke in ordered_spokes(shape, center, spoke_count):
+        spoke_shape = shape.copy()
+        if saved is not None:
+            major, minor, angle = refit_moved_ellipse(reference, result, gid, saved)
+            spoke_shape["grain_length_um"], spoke_shape["grain_width_um"], spoke_shape["orientation_deg"] = major, minor, angle
+        for spoke in ordered_spokes(spoke_shape, center, spoke_count):
             x0, y0 = center
             x1, y1 = spoke["xedge"], spoke["yedge"]
-            c0 = np.interp(x0, reference.x, np.arange(len(reference.x)))
-            r0 = np.interp(y0, reference.y, np.arange(len(reference.y)))
-            c1 = np.interp(x1, reference.x, np.arange(len(reference.x)))
-            r1 = np.interp(y1, reference.y, np.arange(len(reference.y)))
+            c0, r0 = reference.fractional_indices(x0, y0)
+            c1, r1 = reference.fractional_indices(x1, y1)
             dc, dr = c1 - c0, r1 - r0
             denom = dc * dc + dr * dr
             if denom <= 0:
@@ -335,7 +348,7 @@ def spoke_profile_table(
     values = [
         c
         for c in pixels.columns
-        if c not in metadata and pd.to_numeric(pixels[c], errors = "coerce").notna().any()
+        if c not in metadata and pd.to_numeric(pixels[c], errors="coerce").notna().any()
     ]
     keys = [
         "sample_id",
@@ -349,7 +362,7 @@ def spoke_profile_table(
         "distance_bin",
     ]
     binned = (
-        pixels.groupby(keys, dropna = False)[values].mean(numeric_only = True).reset_index()
+        pixels.groupby(keys, dropna=False)[values].mean(numeric_only=True).reset_index()
     )
     return pixels, binned
 
@@ -360,6 +373,7 @@ def apply_filters(frame, filters):
         if chosen and column in out:
             out = out[out[column].astype(str).isin({str(v) for v in chosen})]
     return out
+
 
 def refit_moved_ellipse(reference, result, grain_id, center):
     """Reference long-axis refit: keep angle and expand axes around the moved center."""
@@ -375,13 +389,3 @@ def refit_moved_ellipse(reference, result, grain_id, center):
     major,minor,angle=2*a,2*b,float(row.orientation_deg)
     if minor>major: major,minor,angle=minor,major,angle+90
     return major,minor,angle
-
-
-
-
-
-
-
-
-
-
