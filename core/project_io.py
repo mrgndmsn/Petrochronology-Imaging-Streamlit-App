@@ -15,7 +15,7 @@ FORMAT_VERSION = 2
 
 
 def save_project(
-    layers, tables, grain_results, selections=None, centers=None, point_layers=None, definitions=None
+    layers, tables, grain_results, selections=None, centers=None, point_layers=None, definitions=None, mineral_colors=None
 ):
     # Detach collections before any slow serialization can overlap a rerun.
     # Copy dictionary membership first; deepcopy also isolates mutable frames/arrays.
@@ -25,6 +25,7 @@ def save_project(
         (point_layers or {}).copy(), list(definitions or [])))
     output = BytesIO()
     manifest = {
+        "mineral_colors": _json_safe((mineral_colors or {}).copy()),
         "format": "geochemical-map-streamlit",
         "version": FORMAT_VERSION,
         "layers": [],
@@ -79,7 +80,7 @@ def save_project(
         for index, (key, frame) in enumerate((selections or {}).items()):
             path = f"selections/selection_{index}.json"
             archive.writestr(path, frame.to_json(orient="table", index=False, double_precision=15))
-            manifest["selections"].append({"key": key, "path": path})
+            manifest["selections"].append({"key": key, "path": path, "attrs": _json_safe(frame.attrs)})
         for index, (key, layer) in enumerate((point_layers or {}).items()):
             path = f"point_layers/points_{index}.json"
             archive.writestr(path, layer.frame.to_json(orient="table", index=False, double_precision=15))
@@ -146,6 +147,8 @@ def load_project(data):
             item["key"]: _read_frame(archive, item["path"])
             for item in manifest.get("selections", [])
         }
+        for item in manifest.get('selections',[]):
+            selections[item['key']].attrs.update(item.get('attrs',{}))
         point_layers = {
             item["key"]: PointLayer(
                 item["sample_id"],
@@ -160,6 +163,7 @@ def load_project(data):
         }
         return {
             "calculation_definitions": manifest.get("calculation_definitions", []),
+        "mineral_colors": manifest.get("mineral_colors", {}),
             "layers": layers,
             "point_layers": point_layers,
             "tables": tables,
