@@ -22,7 +22,12 @@ visible_maps=[l for l in st.session_state.layers.values() if (l.sample_id,l.mine
 if not visible_maps and not mineral_points:
     st.info('Import mineral point tables or map layers first.')
     st.stop()
-tab_boundary,tab_nn=st.tabs(['Boundary buffer','Nearest neighbor'])
+tab_pair,tab_grain,tab_boundary,tab_nn=st.tabs(['Mineral-pair chemistry','Grain rim/core','Boundary buffer','Nearest neighbor'])
+from core.boundary_comparisons import comparison_ui, grain_ui
+with tab_pair:
+    comparison_ui(mineral_points,st.session_state)
+with tab_grain:
+    grain_ui(st.session_state,visible_maps)
 with tab_boundary:
     if not visible_maps:
         st.info('Boundary analysis requires raster maps.')
@@ -74,7 +79,7 @@ with tab_boundary:
             table=pd.concat(parts,ignore_index=True,sort=False)
             if not table.empty:
                 render_chart(px.scatter(table,x='signed_boundary_distance_um',y='value',color='mineral_id',
-                    symbol='inside_phase',facet_col='sample_id',facet_row='run_id',opacity=.35,template='plotly_white'),width='stretch')
+                    symbol='inside_phase',facet_col='sample_id',facet_row='run_id',opacity=.35,template='plotly_white',labels={'value':value_channel,'signed_boundary_distance_um':'Distance from boundary (µm; negative = inside)','inside_phase':'Inside boundary'}),width='stretch')
                 st.dataframe(table.groupby(['sample_id','mineral_id','run_id','inside_phase']).value.agg(['count','mean','median','std']),width='stretch')
             else:st.info('No finite chemistry pixels lie within this buffer.')
             st.download_button('Download boundary pixels',table.to_csv(index=False),'boundary_buffer.csv','text/csv')
