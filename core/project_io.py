@@ -14,15 +14,57 @@ from .models import GrainResult, MapLayer, PointLayer
 FORMAT_VERSION = 2
 
 
-def save_project(
+def save_project(layers, tables, grain_results, selections=None, centers=None,
+                 point_layers=None, definitions=None, mineral_colors=None):
+    # Snapshot to private temporary files before serialization. Avoid duplicating
+    # all arrays/dataframes in RAM while retaining isolation from later mutations.
+    import tempfile
+    import pickle
+    from pathlib import Path
+
+    class DiskSnapshot:
+        def __init__(self, mapping, directory, prefix):
+            self.entries = []
+            for index, (key, value) in enumerate(list(mapping.items())):
+                path = directory / f"{prefix}_{index}.pickle"
+                with path.open('wb') as handle:
+                    pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                self.entries.append((key, path))
+
+        def items(self):
+            for key, path in self.entries:
+                with path.open('rb') as handle:
+                    value = pickle.load(handle)
+                yield key, value
+
+    with tempfile.TemporaryDirectory(prefix='geochemical-save-') as temp:
+        directory = Path(temp)
+        snapshots = [DiskSnapshot(mapping, directory, str(i)) for i, mapping in enumerate(
+            (layers, tables, grain_results, selections or {}, point_layers or {}))]
+        return _save_project(snapshots[0], snapshots[1], snapshots[2], snapshots[3],
+                             deepcopy(centers or {}), snapshots[4],
+                             deepcopy(definitions or []), deepcopy(mineral_colors or {}))
+
+
+def _write_table(archive, path, frame):
+    # Preserve pandas table schema, but encode bounded row batches instead of
+    # building one huge JSON string and then another UTF-8 byte copy.
+    schema = json.loads(frame.iloc[:0].to_json(orient="table", index=False, double_precision=15))["schema"]
+    with archive.open(path, 'w', force_zip64=True) as handle:
+        handle.write(('{"schema":' + json.dumps(schema) + ',"data":[').encode())
+        first = True
+        for offset in range(0, len(frame), 1000):
+            chunk = frame.iloc[offset:offset+1000].to_json(orient='records', date_format='iso', double_precision=15)[1:-1]
+            if not chunk:continue
+            if not first:handle.write(b',')
+            handle.write(chunk.encode('utf-8'))
+            first = False
+        handle.write(b']}')
+
+
+def _save_project(
     layers, tables, grain_results, selections=None, centers=None, point_layers=None, definitions=None, mineral_colors=None
 ):
-    # Detach collections before any slow serialization can overlap a rerun.
-    # Copy dictionary membership first; deepcopy also isolates mutable frames/arrays.
-    layers, tables, grain_results, selections, centers, point_layers, definitions = deepcopy((
-        layers.copy(), tables.copy(), grain_results.copy(),
-        (selections or {}).copy(), (centers or {}).copy(),
-        (point_layers or {}).copy(), list(definitions or [])))
     output = BytesIO()
     manifest = {
         "mineral_colors": _json_safe((mineral_colors or {}).copy()),
@@ -56,7 +98,7 @@ def save_project(
             )
         for index, (name, frame) in enumerate(tables.items()):
             path = f"tables/table_{index}.json"
-            archive.writestr(path, frame.to_json(orient="table", index=False, double_precision=15))
+            _write_table(archive, path, frame)
             manifest["tables"].append({"name": name, "path": path, "attrs": _json_safe(frame.attrs)})
         for index, (key, result) in enumerate(grain_results.items()):
             label_path = f"grains/labels_{index}.npy"
@@ -65,8 +107,8 @@ def save_project(
             archive.writestr(label_path, buffer.getvalue())
             shape_path = f"grains/shapes_{index}.json"
             pixel_path = f"grains/pixels_{index}.json"
-            archive.writestr(shape_path, result.shape_table.to_json(orient="table", index=False, double_precision=15))
-            archive.writestr(pixel_path, result.pixel_table.to_json(orient="table", index=False, double_precision=15))
+            _write_table(archive, shape_path, result.shape_table)
+            _write_table(archive, pixel_path, result.pixel_table)
             manifest["grains"].append(
                 {
                     "key": key,
@@ -79,11 +121,11 @@ def save_project(
             )
         for index, (key, frame) in enumerate((selections or {}).items()):
             path = f"selections/selection_{index}.json"
-            archive.writestr(path, frame.to_json(orient="table", index=False, double_precision=15))
+            _write_table(archive, path, frame)
             manifest["selections"].append({"key": key, "path": path, "attrs": _json_safe(frame.attrs)})
         for index, (key, layer) in enumerate((point_layers or {}).items()):
             path = f"point_layers/points_{index}.json"
-            archive.writestr(path, layer.frame.to_json(orient="table", index=False, double_precision=15))
+            _write_table(archive, path, layer.frame)
             manifest["point_layers"].append(
                 {
                     "key": key,
