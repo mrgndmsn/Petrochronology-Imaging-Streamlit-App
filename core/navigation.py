@@ -1,67 +1,152 @@
-"""Ordered navigation; run only the selected tool to preserve widget isolation."""
-from pathlib import Path
-import runpy
-import streamlit as st
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def run_tool(relative):
-    runpy.run_path(str(ROOT / relative), run_name='__main__')
+"""Select one geometry across visible datasets without merging mineral identities."""
+import hashlib
+import numpy as np
+import pandas as pd
+from .selections import rectangle_mask,polygon_mask,circle_mask,selected_pixel_table,profile_table,sampled_profile
+from .provenance import enrich_selection
+from .plots import map_figure
 
 
-def tool_tabs(label, choices, key):
-    # A single active tool avoids running expensive hidden analyses and prevents
-    # st.stop() in an empty tool from blocking its neighboring tools.
-    selected = st.segmented_control(label, list(choices), default=next(iter(choices)),
-                                    selection_mode='single', key=key)
-    run_tool(choices[selected or next(iter(choices))])
+def selection_context(layers):
+    if len(layers)==1:return layers[0].key
+    return 'combined::'+hashlib.sha256('|'.join(sorted(l.key for l in layers)).encode()).hexdigest()[:16]
 
 
-def home():
-    run_tool('core/home_import.py')
+def collect_geometry(layers, all_layers, grains, kind, geometry, name, width=0., sampling=None, spacing=1.):
+    if kind=='spot' and float(geometry[2])<=0 and layers:
+        geometry=[geometry[0],geometry[1],0.5*min(min(l.pixel_size) for l in layers)]
+    parts=[]
+    for layer in layers:
+        if kind=='profile':
+            f=sampled_profile(layer,all_layers,geometry,spacing,sampling) if sampling else profile_table(layer,geometry,width)
+        else:
+            mask={'rectangle':lambda:rectangle_mask(layer,*geometry),'lasso':lambda:polygon_mask(layer,geometry),
+                  'spot':lambda:circle_mask(layer,*geometry)}[kind]()
+            f=selected_pixel_table(layer,mask,name,kind)
+        if 'row_index' in f:
+            f=enrich_selection(layer,f,all_layers,grains.get(layer.key))
+        f['selection_id']=name
+        f['source_layer_key']=layer.key
+        parts.append(f)
+    result=pd.concat(parts,ignore_index=True,sort=False) if parts else pd.DataFrame()
+    result.attrs['selection_geometry']={'kind':kind,'coordinates':np.asarray(geometry,float).tolist(),'width':float(width)}
+    return result
 
 
-def workspace():
-    tool_tabs('Workspace tools', {
-        'Workspace': 'pages/9_Workspace_Tools.py',
-        'Calculate columns': 'pages/5_Calculated_Columns.py',
-    }, 'workspace_tool_tab')
+def combined_map_figure(layers,overlays,color_by,palette):
+    figure=map_figure(layers[0],selectable=True)
+    for layer in layers[1:]:
+        other=map_figure(layer,selectable=True,show_colorbar=False)
+        figure.add_traces(list(other.data))
+    if color_by=='Mineral':
+        # Only measured pixels participate; no invented zeros or blended overlaps.
+        figure.data=()
+        for layer in layers:
+            r,c=np.where(np.isfinite(layer.values));x,y=layer.coordinates_at(r,c)
+            figure.add_scattergl(x=x,y=y,mode='markers',name=layer.mineral_id,legendgroup=layer.mineral_id,
+                meta={'color_by':'mineral_id'},marker=dict(color=palette[layer.mineral_id],size=5,symbol='square'),
+                customdata=np.column_stack([layer.values[r,c]]),
+                hovertemplate=f'{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<br>{layer.channel}=%{{customdata[0]}}<extra></extra>')
+        figure.update_layout(legend_title='Mineral')
+    else:
+        finite=[l.values[np.isfinite(l.values)] for l in layers]
+        finite=[v for v in finite if len(v)]
+        if finite:
+            lo=min(v.min() for v in finite);hi=max(v.max() for v in finite)
+            for trace in figure.data:
+                if trace.type=='heatmap':trace.update(zmin=lo,zmax=hi)
+                elif trace.type=='scattergl' and trace.marker.colorscale:trace.marker.update(cmin=lo,cmax=hi)
+    from .plots import _add_selection_overlays
+    _add_selection_overlays(figure,overlays)
+    figure.update_layout(meta={'map_layer_key':selection_context(layers)},title=layers[0].channel)
+    return figure
 
 
-def grains():
-    tool_tabs('Grain tools', {
-        'Detect grains': 'pages/1_Map_and_Grains.py',
-        'Editing and radial': 'pages/3_Grain_Editing_and_Radial.py',
-        'Grain comparison': 'pages/4_Grain_Comparison.py',
-    }, 'grain_tool_tab')
+def profile_plot_table(table, channels, bin_count=0):
+    """Keep datasets separate when drawing or binning multi-map profiles."""
+    parts=[]
+    identity=['sample_id','mineral_id','run_id']
+    for channel in channels:
+        part=table[identity].copy()
+        part['distance_um']=table.distance_along_profile_um
+        part['value']=pd.to_numeric(table[channel],errors='coerce')
+        part['channel']=channel
+        if bin_count:
+            part['distance_bin']=pd.cut(part.distance_um,int(bin_count),labels=False,duplicates='drop')
+            part=part.groupby(identity+['channel','distance_bin'],dropna=False).agg(
+                distance_um=('distance_um','mean'),value=('value','mean')).reset_index()
+        part['dataset']=part[identity].astype(str).agg(' | '.join,axis=1)
+        parts.append(part)
+    return pd.concat(parts,ignore_index=True).sort_values(['dataset','channel','distance_um']) if parts else pd.DataFrame()
 
 
-def geochronology():
-    tool_tabs('Geochronology tools', {
-        'Geochronology': 'pages/4_Geochronology.py',
-        'Advanced U–Pb': 'pages/7_Advanced_UPb.py',
-        'Concordia and fits': 'pages/10_Concordia_Population_and_Fits.py',
-    }, 'geochronology_tool_tab')
+def filtered_saved_selections(selections, layers):
+    """Show saved rows from visible datasets without modifying saved originals."""
+    keys = {layer.key for layer in layers}
+    result = {}
+    for key, table in selections.items():
+        if 'source_layer_key' in table:
+            mask = table.source_layer_key.isin(keys)
+        else:
+            # Older single-map selections encode their source in the saved key.
+            matching = [layer for layer in layers if key.startswith(layer.key+'::')]
+            mask = pd.Series(False, index=table.index)
+            for layer in matching:
+                current = pd.Series(True, index=table.index)
+                for column in ('sample_id','mineral_id','run_id'):
+                    if column in table:
+                        current &= table[column].astype(str).eq(str(getattr(layer,column)))
+                mask |= current
+        subset = table.loc[mask].copy()
+        if not subset.empty:
+            subset.attrs['pixel_sizes']={l.key:list(l.pixel_size) for l in layers}
+            result[key] = subset
+    return result
 
 
-def desktop():
-    tool_tabs('Desktop analysis tools', {
-        'Desktop analyses': 'pages/8_Desktop_Analysis_Tools.py',
-        'Boundaries and spatial statistics': 'pages/6_Mineral_Spatial_Statistics.py',
-    }, 'desktop_tool_tab')
-
-
-def pages():
-    return [
-        st.Page(home, title='Home and Import', default=True, url_path='home'),
-        st.Page(ROOT / 'pages/0_Mineral_Overlay.py', title='Mineral Overlay', url_path='mineral-overlay'),
-        st.Page(ROOT / 'core/maps_page.py', title='Maps', url_path='maps'),
-        st.Page(ROOT / 'pages/2_Selections_and_Profiles.py', title='Selections and Profiles', url_path='selections-and-profiles'),
-        st.Page(workspace, title='Workspace Tools', url_path='workspace'),
-        st.Page(ROOT / 'pages/2_XY_and_Statistics.py', title='XY Statistics', url_path='xy-statistics'),
-        st.Page(ROOT / 'pages/3_REE_and_Ternary.py', title='REE and Ternary', url_path='ree-and-ternary'),
-        st.Page(grains, title='Grain Analysis', url_path='grain-tools'),
-        st.Page(geochronology, title='Geochronology', url_path='geochronology'),
-        st.Page(desktop, title='Desktop Analysis Tools', url_path='desktop-analysis'),
-    ]
+def map_overlay_figure(layers, results, centers, selections, color_by, palette, **display):
+    """Overlay visible datasets; keep all grain and selection decorations on top."""
+    import plotly.graph_objects as go
+    finite=[l.values[np.isfinite(l.values)] for l in layers]
+    if display.get('log_color'):finite=[v[v>0] for v in finite]
+    finite=[v for v in finite if len(v)]
+    if finite:
+        display.setdefault('vmin',min(v.min() for v in finite))
+        display.setdefault('vmax',max(v.max() for v in finite))
+    backgrounds, decorations = [], []
+    figure = None
+    for index, layer in enumerate(layers):
+        result=results.get(layer.key)
+        local_centers={k[len(layer.key)+2:]:v for k,v in centers.items() if k.startswith(layer.key+'::')}
+        options=dict(display)
+        if index:
+            options['scale_bar_um']=0
+            options['show_colorbar']=False
+        current=map_figure(layer,labels=result.labels if result else None,
+            grain_shapes=result.shape_table if result else None,manual_centers=local_centers,**options)
+        if figure is None:
+            figure=current
+        if color_by=='Mineral':
+            r,c=np.where(np.isfinite(layer.values));x,y=layer.coordinates_at(r,c)
+            backgrounds.append(go.Scattergl(x=x,y=y,mode='markers',name=layer.mineral_id,
+                legendgroup=layer.mineral_id,meta={'color_by':'mineral_id'},
+                marker=dict(color=palette[layer.mineral_id],size=5,symbol='square'),
+                hovertemplate=f'{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<extra></extra>'))
+        else:
+            backgrounds.append(current.data[0])
+        # Mineral pixels use WebGL. Keep decorations in the same renderer so
+        # SVG traces cannot be hidden underneath the WebGL canvas.
+        for trace in current.data[1:]:
+            if trace.type == 'scatter':
+                spec=trace.to_plotly_json()
+                spec.pop('type',None)
+                decorations.append(go.Scattergl(**spec))
+            else:
+                decorations.append(trace)
+    figure.data=()
+    figure.add_traces(backgrounds+decorations)
+    from .plots import _add_selection_overlays
+    _add_selection_overlays(figure,selections)
+    figure.update_layout(meta={'map_layer_key':selection_context(layers)},title=layers[0].channel,
+        legend_title='Mineral' if color_by=='Mineral' else None)
+    return figure
