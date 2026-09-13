@@ -1,4 +1,5 @@
 """Directional mineral-contact chemistry and geometric grain rim/core summaries."""
+from core.page_memory import remembered_input as _remembered_input
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
@@ -59,11 +60,11 @@ def comparison_ui(points,state):
     from .exports import render_chart
     st.subheader('Mineral-pair boundary versus interior')
     st.caption('For each sample/run separately: near-boundary pixels lie within the chosen distance of the other mineral; interior pixels lie farther away. This is proximity to that mineral, not a geometric grain core or proof of physical contact. Coordinates must share a registered µm reference.')
-    minerals=st.multiselect('Minerals to compare',sorted({p.mineral_id for p in points.values()}),default=sorted({p.mineral_id for p in points.values()}))
+    minerals=_remembered_input("boundary_comparisons:62:13", st.multiselect, 'Minerals to compare',sorted({p.mineral_id for p in points.values()}),default=sorted({p.mineral_id for p in points.values()}))
     from .io import numeric_columns
     channels=sorted({c for p in points.values() for c in numeric_columns(p.frame) if c not in (p.x_column,p.y_column,'row_index','column_index')})
-    selected=st.multiselect('Boundary chemistry columns',channels,default=channels[:1])
-    width=st.number_input('Mineral-pair buffer distance (µm)',min_value=0.,value=10.)
+    selected=_remembered_input("boundary_comparisons:65:13", st.multiselect, 'Boundary chemistry columns',channels,default=channels[:1])
+    width=_remembered_input("boundary_comparisons:66:10", st.number_input, 'Mineral-pair buffer distance (µm)',min_value=0.,value=10.)
     if st.button('Compare boundary and interior',type='primary'):
         if len(minerals)<2 or not selected:st.error('Select at least two minerals and one chemistry column.');return
         result=mineral_pair_comparison(points,minerals,selected,width)
@@ -82,7 +83,7 @@ def comparison_ui(points,state):
         backdrop=pixels[(pixels.sample_id==sample)&(pixels.run_id==run)&(pixels.channel==channel)&(pixels.mineral_id==other)].drop_duplicates(['x','y'])
         fig=px.scatter(g,x='x',y='y',color='zone',color_discrete_map={'Near boundary':'#ff4fad','Interior':'#999999'},hover_data=['value','distance_um'])
         if not backdrop.empty:fig.add_scattergl(x=backdrop.x,y=backdrop.y,mode='markers',marker={'size':3,'color':'#00a6cc'},name=other)
-        fig.update_yaxes(scaleanchor='x',scaleratio=1);fig.update_layout(xaxis_title='X (µm)',yaxis_title='Y (µm)')
+        fig.update_yaxes(scaleanchor='x',scaleratio=1);fig.update_layout(xaxis_title='X (µm)',yaxis_title='Y (µm)',meta={'dataset_identities':[[sample,mineral,run],[sample,other,run]]})
         render_chart(fig,width='stretch')
         mask=(summary.sample_id==sample)&(summary.run_id==run)&(summary.channel==channel)&(summary.mineral_id==mineral)&(summary.other_mineral==other)
         render_chart(px.bar(summary[mask],x='zone',y='mean',error_y='sd',title=f'{channel}: mean ±1 sample SD'),width='stretch')
@@ -109,25 +110,34 @@ def grain_ui(state,visible_maps):
     st.subheader('Detected grain: rim versus core')
     st.caption('Rim = pixels inside the selected grain within the buffer distance; core = remaining interior pixels. Distance uses the nearest opposite-label pixel center, including other grains. A fully filled map has no observed outside boundary.')
     if not sources:st.info('Detect grains on Map and Grains first.');return
-    source=next(l for l in sources if l.key==st.selectbox('Grain boundary dataset',[l.key for l in sources]))
+    source=next(l for l in sources if l.key==_remembered_input("boundary_comparisons:112:45", st.selectbox, 'Grain boundary dataset',[l.key for l in sources]))
     labels=state.grain_results[source.key].labels
     ids=[int(v) for v in np.unique(labels) if v>0]
     if not ids:st.info('No detected grains.');return
-    grain=st.selectbox('Grain to compare',ids)
+    grain=_remembered_input("boundary_comparisons:116:10", st.selectbox, 'Grain to compare',['All grains']+ids)
     candidates=compatible_layers(source,state.layers)
-    channel=st.selectbox('Grain chemistry channel',[l.channel for l in candidates])
+    channel=_remembered_input("boundary_comparisons:118:12", st.selectbox, 'Grain chemistry channel',[l.channel for l in candidates])
     layer=next(l for l in candidates if l.channel==channel)
-    width=st.number_input('Grain rim width (µm)',min_value=0.,value=10.)
-    phase=labels==grain
-    table=boundary_buffer_stats(layer,phase,float('inf'))
-    table=table[table.inside_phase].copy()
+    width=_remembered_input("boundary_comparisons:120:10", st.number_input, 'Grain rim width (µm)',min_value=0.,value=10.)
+    selected_ids=ids if grain=='All grains' else [grain]
+    parts=[]
+    for gid in selected_ids:
+        table=boundary_buffer_stats(layer,labels==gid,float('inf'))
+        table=table[table.inside_phase].copy()
+        table['grain_id']=gid
+        parts.append(table)
+    table=pd.concat(parts,ignore_index=True)
     if table.empty:st.info('No finite grain chemistry or no observable outside boundary.');return
     table['zone']=np.where(abs(table.signed_boundary_distance_um)<=width,'Rim','Core')
-    render_chart(boundary_halo_figure(layer,phase,width),width='stretch')
-    stats=table.groupby('zone').value.agg(n='count',mean='mean',sd='std',median='median').reset_index()
-    render_chart(px.bar(stats,x='zone',y='mean',error_y='sd',title=channel+' — mean ±1 sample SD'),width='stretch')
+    phase=np.isin(labels,selected_ids)
+    render_chart(boundary_halo_figure(layer,phase,width,grain_labels=labels if grain=='All grains' else None),width='stretch')
+    stats=table.groupby(['grain_id','zone']).value.agg(n='count',mean='mean',sd='std',median='median').reset_index()
+    stats['grain']=stats.grain_id.astype(str)
+    render_chart(px.bar(stats,x='grain',y='mean',color='zone',barmode='group',error_y='sd',title=channel+' — mean ±1 sample SD'),width='stretch')
     st.dataframe(stats,width='stretch')
-    means=stats.set_index('zone')['mean'];rim=means.get('Rim',np.nan);core=means.get('Core',np.nan)
-    st.write({'rim_minus_core':rim-core,'rim_div_core':rim/core if np.isfinite(core) and core!=0 else None})
-    for key,val in dict(sample_id=layer.sample_id,mineral_id=layer.mineral_id,run_id=layer.run_id,grain_id=grain,channel=channel).items():table[key]=val
+    means=stats.pivot(index='grain_id',columns='zone',values='mean').reindex(columns=['Rim','Core'])
+    means['rim_minus_core']=means.Rim-means.Core
+    means['rim_div_core']=means.Rim/means.Core.replace(0,np.nan)
+    st.dataframe(means.reset_index(),width='stretch')
+    for key,val in dict(sample_id=layer.sample_id,mineral_id=layer.mineral_id,run_id=layer.run_id,channel=channel).items():table[key]=val
     st.download_button('Download grain rim/core pixels',table.to_csv(index=False),'grain_rim_core.csv','text/csv')
