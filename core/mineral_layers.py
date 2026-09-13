@@ -39,8 +39,9 @@ def mineral_layers_ui(state, key):
         refs=[]
         with st.expander('Raster presence settings'):
             for identity,group in groups.items():
-                labels={l.key:l.channel for l in group}
-                refs.append(st.selectbox('Presence channel | '+' | '.join(identity),list(labels),format_func=labels.get,key=f'{key}_presence_{identity}'))
+                labels={l.key:l.channel+('' if np.isfinite(l.values).any() else ' (no finite values)') for l in group}
+                first=next((i for i,l in enumerate(group) if np.isfinite(l.values).any()),0)
+                refs.append(st.selectbox('Presence channel | '+' | '.join(identity),list(labels),index=first,format_func=labels.get,key=f'{key}_presence_{identity}'))
             rule=st.selectbox('Presence rule',['Finite pixels','Greater than threshold'],key=f'{key}_presence_rule')
             threshold=st.number_input('Mineral presence threshold',value=0.,key=f'{key}_presence_threshold')
         points.update(raster_mineral_points(state.layers,refs,'finite' if rule=='Finite pixels' else 'greater_than',threshold))
