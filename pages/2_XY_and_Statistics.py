@@ -12,7 +12,7 @@ from core.analysis import correlation_matrix, iqr_filter, ks_group_comparisons, 
 from core.io import numeric_columns
 from core.plots import xy_figure
 from core.state import initialize_state
-from core.ui_filters import filter_table_ui
+from core.ui_filters import filter_table_ui, persistent_selectbox
 
 st.set_page_config(page_title="Plots and statistics", page_icon="📊", layout="wide")
 initialize_state()
@@ -40,11 +40,11 @@ tab_xy, tab_kde, tab_corr, tab_pca = st.tabs(
 )
 with tab_xy:
     c1, c2, c3 = st.columns(3)
-    x = c1.selectbox("X", numbers, index = 0)
-    y = c2.selectbox("Y", numbers, index = min(1, len(numbers) - 1))
+    x = persistent_selectbox("X", numbers,"xy_x",c1)
+    y = persistent_selectbox("Y",numbers,"xy_y",c2,index=min(1,len(numbers)-1))
     color_options = ["None"] + list(frame.columns)
-    color = c3.selectbox("Color/group", color_options)
-    symbol = st.selectbox("Symbol by", ["None"] + list(frame.columns))
+    color = persistent_selectbox("Color/group",color_options,"xy_color",c3)
+    symbol = persistent_selectbox("Symbol by",["None"]+list(frame.columns),"xy_symbol")
     marker_size = st.slider("Marker size", 1, 30, 6)
     colors_text = st.text_area("Category colors (category=#RRGGBB)")
     try:
@@ -67,6 +67,8 @@ with tab_xy:
     iqr = st.checkbox("Filter X/Y outliers by IQR")
     if iqr:
         plot_frame = iqr_filter(plot_frame, [x, y])
+    from core.xy_link import ROW_ID, selection_key, selected_rows, linked_map_ui
+    plot_frame[ROW_ID] = np.arange(len(plot_frame))
     if plot_type == "Scatter":
         figure = xy_figure(
             plot_frame,
@@ -97,6 +99,7 @@ with tab_xy:
                 y = y,
                 color=None if color == "None" else color,
                 opacity = opacity,
+                custom_data=[ROW_ID],
             )
             for trace in scatter.data:
                 figure.add_trace(trace)
@@ -150,18 +153,24 @@ with tab_xy:
                     st.error('Axis bounds must increase and be positive on logarithmic axes.')
                 else:
                     getattr(figure,'update_'+which+'axes')(range = [np.log10(v) if is_log and v is not None else v for v in limits])
-    render_chart(figure, width="stretch")
+    if plot_type != '2D KDE density':
+        figure.update_layout(dragmode='lasso')
+        link_key=selection_key(plot_frame,(name,x,y,color,symbol,log_x,log_y,plot_type))
+        event=render_chart(figure,width='stretch',key=link_key,on_select='rerun',selection_mode=('points','box','lasso'))
+        linked_map_ui(selected_rows(plot_frame,event),st.session_state)
+    else:
+        render_chart(figure,width='stretch')
     st.download_button(
         "Download filtered X-Y data",
-        plot_frame.to_csv(index = False),
+        plot_frame.drop(columns=[ROW_ID]).to_csv(index = False),
         "xy_plot_data.csv",
         "text/csv",
     )
 
 with tab_kde:
-    value = st.selectbox("Variable", numbers, key = "kde_value")
+    value = persistent_selectbox("Variable",numbers,"kde_value")
     group_options = [c for c in frame.columns if frame[c].nunique(dropna=True) <= 100]
-    group = st.selectbox("Groups", ["None"] + group_options, key = "kde_group")
+    group = persistent_selectbox("Groups",["None"]+group_options,"kde_group")
     kde_frame = frame.copy()
     log = st.checkbox("Log10 transform", key = "kde_log")
     if log:
