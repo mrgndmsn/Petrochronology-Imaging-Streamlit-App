@@ -107,7 +107,7 @@ def map_figure(
     figure.update_layout(
         template="plotly_white", height=700, margin=dict(l=20, r=20, t=35, b=20),
         uirevision=layer.key, clickmode="event+select",
-        meta={"map_layer_key": layer.key},
+        meta={"map_layer_key": layer.key, "dataset_identities": [[layer.sample_id,layer.mineral_id,layer.run_id]]},
         newselection=dict(line=dict(color="red",width=2,dash="solid"))
     )
     figure.update_xaxes(title="X (µm)", autorange="reversed" if invert_x else True, constrain="domain")
