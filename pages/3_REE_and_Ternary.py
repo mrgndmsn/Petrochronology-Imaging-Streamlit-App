@@ -19,13 +19,11 @@ from core.ui_filters import filter_table_ui
 st.set_page_config(page_title = "REE and ternary", page_icon = "🔺", layout = "wide")
 initialize_state()
 st.title("REE and ternary plots")
-if not st.session_state.tables:
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import data or run grain detection first.")
     st.stop()
-names = list(st.session_state.tables)
-active = st.session_state.active_table_name
-name = st.selectbox("Data source", names, index = names.index(active) if active in names else 0)
-frame = filter_table_ui(st.session_state.tables[name], name, "ree")
+from core.data_sources import analysis_source_ui
+name,frame=analysis_source_ui(st.session_state,"ree")
 if frame.empty:
     st.warning("No rows match the current filters.")
     st.stop()
@@ -44,11 +42,12 @@ with tab_ree:
         choice = cols[i % 7].selectbox(element, options, index=options.index(guess), key = f"ree_{name}_{element}")
         if choice != "None":
             mapping[element] = choice
-    mode = st.selectbox("Summarize as", ["Overall mean", "Group means", "Individual rows", "Distance zones"], key = "ree_mode")
-    group = st.selectbox("Group/color", ["None"] + list(frame.columns), key = "ree_group")
+    mode = st.selectbox("Summarize as", ["Overall mean", "Group means", "Individual rows", "Distance zones"], index=1 if "dataset_id" in frame else 0,key = "ree_mode")
+    group = st.selectbox("Group/color", ["None"] + list(frame.columns), index=1+list(frame.columns).index("dataset_id") if "dataset_id" in frame else 0,key = "ree_group")
     envelope_labels = {"None":"none", "±1 SD":"sd1", "±2 SD":"sd2", "P16–P84":"p16_84",
-                       "P2.5–P97.5":"p025_975", "±1 log-SD":"logsd1", "±2 log-SD":"logsd2"}
+                       "P2.5–P97.5":"p025_975", "±1 log-SD":"logsd1", "±2 log-SD":"logsd2", "95% CI of mean":"ci95"}
     envelope = st.selectbox("Envelope around mean", list(envelope_labels), key="ree_envelope")
+    st.caption("SD and percentile bands describe variation among observations. The 95% CI estimates uncertainty of the arithmetic mean using Student's t and assumes independent observations; spatially correlated pixels can make it too narrow. Log-SD uses a geometric-mean center.")
     iqr = st.checkbox("Remove IQR outliers before summary", key = "ree_iqr")
     multiplier = st.number_input("REE IQR multiplier", min_value = .01, value = 1.5)
     log = st.checkbox("Log REE Y axis", True)
@@ -89,33 +88,28 @@ with tab_ree:
             draw = norm.sample(int(max_rows), random_state=1) if len(norm) > max_rows else norm
             for i, (idx, row) in enumerate(draw.iterrows()):
                 color = px.colors.sample_colorscale(palette, [i/max(1,len(draw)-1)])[0]
-                fig.add_scatter(x = REE_ORDER, y = row, mode = "lines+markers", name = f"Row {idx}",
-                                line = dict(color=color), connectgaps = False)
-            st.caption(f"Drawing {len(draw)} of {len(norm)} rows; the download includes all rows. Envelopes and IQR apply to summaries.")
-        else:
-            stats = ree_statistics(work, mapping, standard,
-                group if mode in ("Group means", "Distance zones") and group != "None" else None, iqr, multiplier)
-            for i, (label, subset) in enumerate(stats.groupby('group', sort = False)):
-                color = px.colors.sample_colorscale(palette, [i/max(1,stats.group.nunique()-1)])[0]
-                lower, upper = ree_envelope(subset, envelope_labels[envelope])
-                invalid = ~np.isfinite(lower) | ~np.isfinite(upper)
-                if log:
-                    invalid |= (lower <= 0) | (upper <= 0)
-                lower[invalid], upper[invalid] = np.nan, np.nan
-                # Draw contiguous finite segments separately to avoid filling across missing elements.
-                indices = np.flatnonzero(~invalid)
-                for seg in np.split(indices, np.where(np.diff(indices) != 1)[0]+1):
-                    if len(seg) < 2:
-                        continue
-                    xs = subset.element.iloc[seg].tolist()
-                    fig.add_scatter(x=xs+xs[::-1], y = np.r_[upper[seg],lower[seg][::-1]], fill = 'toself',
-                                    fillcolor = color, opacity = .18, line=dict(width=0), mode = 'lines',
-                                    showlegend = False, hoverinfo='skip', legendgroup = label)
-                fig.add_scatter(x=subset.element, y = subset['mean'], mode='lines+markers', name = label,
-                                line=dict(color = color), connectgaps = False, legendgroup = label)
-            st.dataframe(stats, width = "stretch", hide_index=True)
-            st.download_button("Download REE statistics", stats.to_csv(index = False), "ree_statistics.csv", "text/csv")
-        fig.update_xaxes(categoryorder = "array", categoryarray = REE_ORDER, title = "Element")
+                fig.add_scatter(x = list(range(len(REE_ORDER))), y = row, mode = "lines+markers", name = f"Row {idx}",
+                                line = dict(color=color), opacity=.25 if envelope != "None" else 1., connectgaps = False)
+            st.caption(f"Drawing {len(draw)} of {len(norm)} rows; the download includes all rows.")
+        if mode != "Individual rows" or envelope != "None":
+            summary_group = group if mode in ("Group means", "Distance zones", "Individual rows") and group != "None" else None
+            if mode == "Individual rows":
+                st.caption("The selected envelope adds a mean summary over the individual curves. Group/color defines separate summaries; None uses all filtered rows. The row limit does not limit summary calculations.")
+            stats = ree_statistics(work, mapping, standard, summary_group, iqr, multiplier)
+            labels = list(stats.group.unique())
+            colors = {str(label): px.colors.sample_colorscale(palette, [i/max(1,len(labels)-1)])[0] for i,label in enumerate(labels)}
+            if summary_group == 'mineral_id':
+                from core.mineral_colors import mineral_palette
+                shared = mineral_palette(st.session_state)
+                colors = {label:shared.get(label,color) for label,color in colors.items()}
+            from core.ree_plot import add_ree_summary
+            stats, messages = add_ree_summary(fig,stats,envelope_labels[envelope],colors,log=log,
+                log_floor=ymin if ymin is not None and ymin>0 else None)
+            for message in messages:
+                st.info(message)
+            st.dataframe(stats, width="stretch", hide_index=True)
+            st.download_button("Download REE statistics", stats.to_csv(index=False), "ree_statistics.csv", "text/csv")
+        fig.update_xaxes(type='linear',tickmode='array',tickvals=list(range(len(REE_ORDER))),ticktext=REE_ORDER,title="Element")
         fig.update_yaxes(type='log' if log else 'linear', title = f"Sample / {standard}")
         if ymin is not None or ymax is not None:
             if (log and any(v is not None and v <= 0 for v in (ymin,ymax))) or (ymin is not None and ymax is not None and ymax <= ymin):
