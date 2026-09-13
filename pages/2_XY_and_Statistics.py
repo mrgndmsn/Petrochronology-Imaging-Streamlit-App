@@ -33,6 +33,8 @@ if len(numbers) < 2:
     st.error("This table needs at least two numeric columns.")
     st.stop()
 
+st.caption("Axis abbreviation k means ×1,000: 20k on a ppm axis is 20,000 ppm. Large extreme values expand the automatic range; logarithmic axes change spacing, not concentrations.")
+
 tab_xy, tab_kde, tab_corr, tab_pca = st.tabs(
     ["X–Y", "KDE and K-S", "Correlation", "PCA"]
 )
@@ -162,6 +164,8 @@ with tab_kde:
     group = st.selectbox("Groups", ["None"] + group_options, key = "kde_group")
     kde_frame = frame.copy()
     log = st.checkbox("Log10 transform", key = "kde_log")
+    if log:
+        st.caption("KDE uses log10-transformed concentrations: 2 = 100 ppm, 3 = 1,000 ppm, 4 = 10,000 ppm for ppm columns. Density is per log10 unit; nonpositive values are excluded.")
     outliers = st.checkbox("Filter outliers by IQR", key = "kde_iqr")
     if outliers:
         kde_frame = iqr_filter(kde_frame, [value])
