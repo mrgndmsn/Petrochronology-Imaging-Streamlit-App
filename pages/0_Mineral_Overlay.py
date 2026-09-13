@@ -39,6 +39,7 @@ for index, layer in enumerate(layers):
         present |= np.isfinite(
             __import__("pandas").to_numeric(frame[column], errors="coerce").to_numpy()
         )
+    present &= np.isfinite(__import__('pandas').to_numeric(frame[layer.x_column],errors='coerce')) & np.isfinite(__import__('pandas').to_numeric(frame[layer.y_column],errors='coerce'))
     shown = frame.loc[present]
     figure.add_trace(
         go.Scattergl(
@@ -64,6 +65,11 @@ for index, layer in enumerate(layers):
             "y_max": shown[layer.y_column].max(),
         }
     )
+total_pixels=sum(row['pixels'] for row in summary)
+st.caption(f'{len(layers)} datasets selected; {total_pixels:,} pixels with finite chemistry and coordinates.')
+if not total_pixels:
+    st.warning('The selected presence channels or filters retain no pixels. Check Raster presence settings and the sample/mineral/run filters.')
+    st.stop()
 figure.update_layout(
     template="plotly_white",
     height=800,
