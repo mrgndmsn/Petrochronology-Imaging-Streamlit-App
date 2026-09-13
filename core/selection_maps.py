@@ -134,7 +134,15 @@ def map_overlay_figure(layers, results, centers, selections, color_by, palette, 
                 hovertemplate=f'{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<extra></extra>'))
         else:
             backgrounds.append(current.data[0])
-        decorations.extend(current.data[1:])
+        # Mineral pixels use WebGL. Keep decorations in the same renderer so
+        # SVG traces cannot be hidden underneath the WebGL canvas.
+        for trace in current.data[1:]:
+            if trace.type == 'scatter':
+                spec=trace.to_plotly_json()
+                spec.pop('type',None)
+                decorations.append(go.Scattergl(**spec))
+            else:
+                decorations.append(trace)
     figure.data=()
     figure.add_traces(backgrounds+decorations)
     from .plots import _add_selection_overlays
