@@ -14,11 +14,31 @@ st.set_page_config(page_title="Calculated columns", page_icon="➗", layout="wid
 initialize_state()
 st.title("Calculated columns and data table")
 
-if not st.session_state.tables:
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import data or run grain detection first.")
     st.stop()
-name = st.selectbox("Data source", list(st.session_state.tables))
-frame = st.session_state.tables[name].copy()
+from core.data_sources import analysis_source_ui
+if '_calculated_next_source' in st.session_state:
+    st.session_state['calculated_source']=st.session_state.pop('_calculated_next_source')
+name,frame=analysis_source_ui(st.session_state,'calculated')
+existing=st.session_state.tables.get(name)
+editable=existing is not None and existing.attrs.get('calculation_snapshot',False) and len(existing)==len(frame)
+if not editable:
+    st.dataframe(frame,width='stretch',hide_index=True)
+    st.caption('Start from all observations and filter the rows you want. Create an editable copy to add equations without replacing imported data or discarding excluded rows.')
+    new_name=st.text_input('Calculation table name','Combined calculations')
+    if st.button('Create editable table from filtered rows'):
+        if not new_name.strip() or new_name in st.session_state.tables:
+            st.error('Enter a new, nonempty table name.')
+        elif frame.empty:st.error('No rows match the filters.')
+        else:
+            frame=frame.copy()
+            frame.attrs['calculation_snapshot']=True
+            st.session_state.tables[new_name]=frame
+            st.session_state['_calculated_next_source']=new_name
+            st.rerun()
+    st.stop()
+frame=frame.copy()
 history = st.session_state.table_history.setdefault(name, [])
 st.subheader("Shortcuts")
 numeric = [
