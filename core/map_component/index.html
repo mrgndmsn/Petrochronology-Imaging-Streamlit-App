@@ -1,7 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><script src="plotly.min.js"></script><style>html,body{margin:0;}#plot{width:100%;}</style></head><body><div id="plot"></div><script>
 const plot=document.getElementById('plot');let args={}, busy=false, lastMode=null, attached=false, cachedView=null, lastArgs=null;
 function send(type,extra={}){parent.postMessage({isStreamlitMessage:true,type,...extra},'*');}
-function value(selection){send('streamlit:setComponentValue',{value:{selection,mode:args.mode},dataType:'json'});}
+function value(selection){send('streamlit:setComponentValue',{value:{selection,mode:args.mode,event_id:Date.now()},dataType:'json'});}
 function storageKey(){return 'geochem-map-view:'+args.identity;}
 function readView(){if(cachedView && cachedView.identity===args.identity)return cachedView;try{return JSON.parse(sessionStorage.getItem(storageKey())||'null');}catch(e){return null;}}
 function point(p){return {x:p.x,y:p.y,curve_number:p.curveNumber,point_index:p.pointIndex};}
@@ -25,11 +25,12 @@ async function render(a){
   });
   plot.on('plotly_selected',e=>{
    if(!e||!args.selectable)return;
-   const s={points:(e.points||[]).map(point),box:[],lasso:[]};
+   const s={points:[],box:[],lasso:[]};
    if(e.range)s.box=[{x:e.range.x,y:e.range.y}];
-   if(e.lassoPoints)s.lasso=[e.lassoPoints];
+   if(e.lassoPoints)s.lasso=[{x:Array.from(e.lassoPoints.x,Number),y:Array.from(e.lassoPoints.y,Number)}];
    if(s.box.length||s.lasso.length)value(s);
   });
+  plot.on('plotly_deselect',()=>{if(args.selectable)value({points:[],box:[],lasso:[]});});
   plot.on('plotly_click',e=>{
    if(!args.selectable || !args.pointMode || !e.points.length)return;
    value({points:[point(e.points[0])],box:[],lasso:[]});
