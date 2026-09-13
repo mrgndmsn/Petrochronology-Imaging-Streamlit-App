@@ -33,6 +33,8 @@ def render_chart(figure, **kwargs):
     import streamlit as st
     from .mineral_colors import mineral_palette, apply_mineral_colors
     apply_mineral_colors(figure,mineral_palette(st.session_state))
+    from .chart_colors import prepare_colors, controls
+    prepared_colors=prepare_colors(figure,st.session_state)
     count=st.session_state.get('_figure_export_count',0)
     st.session_state['_figure_export_count']=count+1
     page=Path(inspect.currentframe().f_back.f_code.co_filename).stem
@@ -55,6 +57,7 @@ def render_chart(figure, **kwargs):
     else:
         event=st.plotly_chart(figure,**kwargs)
 
+    controls(figure,st.session_state,prefix,prepared_colors)
     with st.expander('Export this figure'):
         fmt=st.selectbox('Figure format',['PNG','SVG','PDF','Offline HTML'],key=prefix+'_format')
         width=st.number_input('Export width (pixels)',200,8000,1200,key=prefix+'_width')
