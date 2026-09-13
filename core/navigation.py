@@ -31,6 +31,7 @@ def workspace():
 
 def grains():
     tool_tabs('Grain tools', {
+        'Detect grains': 'pages/1_Map_and_Grains.py',
         'Editing and radial': 'pages/3_Grain_Editing_and_Radial.py',
         'Grain comparison': 'pages/4_Grain_Comparison.py',
     }, 'grain_tool_tab')
@@ -55,12 +56,12 @@ def pages():
     return [
         st.Page(home, title='Home and Import', default=True, url_path='home'),
         st.Page(ROOT / 'pages/0_Mineral_Overlay.py', title='Mineral Overlay', url_path='mineral-overlay'),
-        st.Page(ROOT / 'pages/1_Map_and_Grains.py', title='Map and Grains', url_path='map-and-grains'),
+        st.Page(ROOT / 'core/maps_page.py', title='Maps', url_path='maps'),
         st.Page(ROOT / 'pages/2_Selections_and_Profiles.py', title='Selections and Profiles', url_path='selections-and-profiles'),
         st.Page(workspace, title='Workspace Tools', url_path='workspace'),
         st.Page(ROOT / 'pages/2_XY_and_Statistics.py', title='XY Statistics', url_path='xy-statistics'),
         st.Page(ROOT / 'pages/3_REE_and_Ternary.py', title='REE and Ternary', url_path='ree-and-ternary'),
-        st.Page(grains, title='Grain Editing, Radial and Comparison', url_path='grain-tools'),
+        st.Page(grains, title='Grain Analysis', url_path='grain-tools'),
         st.Page(geochronology, title='Geochronology', url_path='geochronology'),
         st.Page(desktop, title='Desktop Analysis Tools', url_path='desktop-analysis'),
     ]
