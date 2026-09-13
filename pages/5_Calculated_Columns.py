@@ -25,7 +25,7 @@ existing=st.session_state.tables.get(name)
 editable=existing is not None and existing.attrs.get('calculation_snapshot',False) and len(existing)==len(frame)
 if not editable:
     st.dataframe(frame,width='stretch',hide_index=True)
-    st.caption('Start from all observations and filter the rows you want. Create an editable copy to add equations without replacing imported data or discarding excluded rows.')
+    st.caption('Calculate directly below. Your result will be saved in a separate calculation table; imported data stay unchanged. You can also create an editable copy first.')
     new_name=st.text_input('Calculation table name','Combined calculations')
     if st.button('Create editable table from filtered rows'):
         if not new_name.strip() or new_name in st.session_state.tables:
@@ -37,9 +37,8 @@ if not editable:
             st.session_state.tables[new_name]=frame
             st.session_state['_calculated_next_source']=new_name
             st.rerun()
-    st.stop()
 frame=frame.copy()
-history = st.session_state.table_history.setdefault(name, [])
+history = st.session_state.table_history.setdefault(name, []) if editable else []
 st.subheader("Shortcuts")
 numeric = [
     column
@@ -74,7 +73,7 @@ elif operation != "Custom equation":
         )
         for i in range(count)
     ]
-st.write("Use dataframe column names in an equation, for example `U_ppm / Th_ppm`.")
+st.write("Use exact column names, for example `U238_ppm / PbTotal_ppm`. Wrap names containing spaces or punctuation in backticks: `` `U concentration (ppm)` / `Th concentration (ppm)` ``.")
 new_name = st.text_input("New column name")
 equation = st.text_input("Equation", disabled=operation != "Custom equation")
 if st.button("Calculate column", type="primary"):
@@ -117,11 +116,24 @@ if st.button("Calculate column", type="primary"):
                     * pd.to_numeric(frame[selected[1]], errors="coerce")
                     * 137.818
                 )
+            if not editable:
+                base = "Combined calculations"
+                target = base
+                suffix = 2
+                while target in st.session_state.tables:
+                    target = f"{base} {suffix}"
+                    suffix += 1
+                frame.attrs['calculation_snapshot'] = True
+                st.session_state.tables[target] = frame
+                st.session_state['_calculated_next_source'] = target
+                st.rerun()
             history.append(st.session_state.tables[name].copy())
             st.session_state.tables[name] = frame
             st.success(f"Created {new_name}.")
         except Exception as exc:
             st.error(f"The equation could not be evaluated: {exc}")
+if not editable:
+    st.stop()
 left, right = st.columns(2)
 if left.button("Undo last table change", disabled=not history):
     st.session_state.tables[name] = history.pop()
