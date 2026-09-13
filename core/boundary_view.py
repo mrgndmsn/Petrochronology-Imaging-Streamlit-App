@@ -6,10 +6,18 @@ from .plots import map_figure
 from .selections import boundary_buffer_stats
 
 
-def boundary_halo_figure(layer, phase, width):
+def boundary_halo_figure(layer, phase, width, grain_labels=None):
     # Geometry includes unmeasured cells; statistical selection still excludes them.
     cells = boundary_buffer_stats(replace(layer, values=np.ones_like(layer.values)), phase, width)
-    figure = map_figure(layer, labels=np.asarray(phase, int))
+    if grain_labels is not None:
+        # Calculate each label independently so touching grains retain their
+        # internal contact, then draw each halo only once.
+        import pandas as pd
+        parts=[boundary_buffer_stats(replace(layer, values=np.ones_like(layer.values)), grain_labels==gid, width)
+               for gid in np.unique(grain_labels) if gid>0]
+        cells=pd.concat(parts,ignore_index=True) if parts else cells.iloc[:0]
+        cells=cells.sort_values('inside_phase',ascending=False).drop_duplicates(['row_index','column_index'])
+    figure = map_figure(layer, labels=np.asarray(grain_labels if grain_labels is not None else phase, int))
     boundaries = list(figure.data[1:])
     figure.data = figure.data[:1]
     for inside, color, title in [(True, '#00c9ff', 'Inside buffer'), (False, '#ff4fad', 'Outside buffer')]:
