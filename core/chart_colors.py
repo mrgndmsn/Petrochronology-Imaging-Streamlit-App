@@ -1,4 +1,5 @@
 """Category controls below charts; mineral and selection palettes remain authoritative."""
+from core.page_memory import remembered_input as _remembered_input
 import hashlib
 from .selection_style import domain_palette,COLORS
 
@@ -63,6 +64,6 @@ def controls(figure,state,prefix,prepared):
                 trace,index,_=next(e for e in entries if e[2]==name)
                 original=trace.marker.color if index is None else None
                 current=original if isinstance(original,str) and original.startswith('#') else COLORS[i%len(COLORS)]
-            color=st.color_picker(name,current,key=prefix+'_category_'+hashlib.sha256(key.encode()).hexdigest()[:12])
+            color=_remembered_input("chart_colors:66:18", st.color_picker, name,current,key=prefix+'_category_'+hashlib.sha256(key.encode()).hexdigest()[:12])
             if color!=current:
                 registry[key]=color;st.rerun()
