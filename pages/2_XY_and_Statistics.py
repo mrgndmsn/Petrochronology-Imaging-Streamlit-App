@@ -20,19 +20,11 @@ st.title("X–Y plots, correlation, and PCA")
 
 
 
-if not st.session_state.tables:
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import data or run grain detection first.")
     st.stop()
-names = list(st.session_state.tables)
-default = (
-    names.index(st.session_state.active_table_name)
-    if st.session_state.active_table_name in names
-    else 0
-)
-name = st.selectbox("Data source", names, index = default)
-frame = st.session_state.tables[name]
-st.session_state.active_table_name = name
-frame = filter_table_ui(frame, name, "xy")
+from core.data_sources import analysis_source_ui
+name,frame=analysis_source_ui(st.session_state,"xy")
 if frame.empty:
     st.warning("No rows match the current filters.")
     st.stop()
@@ -201,6 +193,7 @@ with tab_kde:
         except ValueError as exc:
             st.caption(f"{label}: {exc}")
     kde_fig.update_layout(template = "plotly_white", xaxis_title = ("log10 " if log else "")+value, yaxis_title = "Probability density")
+    kde_fig.update_layout(legend_title=None if group == "None" else group)
     render_chart(kde_fig, width = "stretch")
     if curves:
         st.download_button("Download KDE curves", pd.concat(curves).to_csv(index=False), "kde_curves.csv", "text/csv")
@@ -282,6 +275,7 @@ with tab_pca:
         st.download_button("Download PCA driver ranks",drivers.to_csv(index=False),"pca_driver_ranks.csv","text/csv")
         if "PC2" in loadings:
             biplot = pca_biplot(scores,loadings,variance,int(top),frame[color] if color!="None" else None)
+            biplot.update_layout(legend_title=None if color == "None" else color)
             render_chart(biplot,width = "stretch")
             st.download_button("Download PCA biplot",biplot.to_html(include_plotlyjs = True),"pca_biplot.html","text/html")
 
