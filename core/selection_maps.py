@@ -122,6 +122,6 @@ def map_overlay_figure(layers, results, centers, selections, color_by, palette, 
     figure.add_traces(backgrounds+decorations)
     from .plots import _add_selection_overlays
     _add_selection_overlays(figure,selections)
-    figure.update_layout(meta={'map_layer_key':selection_context(layers)},title=layers[0].channel,
+    figure.update_layout(meta={'map_layer_key':selection_context(layers),'dataset_identities':[[l.sample_id,l.mineral_id,l.run_id] for l in layers]},title=layers[0].channel,
         legend_title='Mineral' if color_by=='Mineral' else None)
     return figure
