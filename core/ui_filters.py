@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.page_memory import remembered_input as _remembered_input
 import streamlit as st
 import numpy as np
 from .provenance import apply_filters
@@ -25,7 +26,7 @@ def filter_table_ui(frame, source_name, key_prefix = "plot"):
     with st.expander("Filter rows", expanded = bool(columns)):
         for column in columns:
             values = sorted(frame[column].dropna().astype(str).unique().tolist())
-            filters[column] = st.multiselect(
+            filters[column] = _remembered_input("ui_filters:28:30", st.multiselect, 
                 column.replace("_", " ").title(),
                 values,
                 default=values if column in ('sample_id','mineral_id','run_id') else [],
@@ -47,7 +48,7 @@ def filter_layers_ui(layers, key):
     with st.expander('Filter rows',expanded=True):
         for column,label in [('sample_id','Samples'),('mineral_id','Minerals'),('run_id','Runs')]:
             choices=sorted({getattr(l,column) for l in visible})
-            chosen=st.multiselect(label,choices,default=choices,key=key+'_'+column)
+            chosen=_remembered_input("ui_filters:50:19", st.multiselect, label,choices,default=choices,key=key+'_'+column)
             visible=[l for l in visible if getattr(l,column) in chosen]
     return visible
 
@@ -61,7 +62,7 @@ def channel_layers_ui(state,key,grain_results_only=False):
     channels=list(dict.fromkeys(l.channel for l in layers))
     populated={l.channel for l in layers if np.isfinite(l.values).any()}
     first=next((i for i,c in enumerate(channels) if c in populated),0)
-    channel=st.selectbox('Channel',channels,index=first,key=key+'_channel',format_func=lambda c:c if c in populated else c+' (no finite values)')
+    channel=_remembered_input("ui_filters:64:12", st.selectbox, 'Channel',channels,index=first,key=key+'_channel',format_func=lambda c:c if c in populated else c+' (no finite values)')
     visible=filter_layers_ui([l for l in layers if l.channel==channel],key)
     if not visible:
         st.info('No maps match these filters.')
@@ -81,6 +82,6 @@ def persistent_selectbox(label, options, key, container=None, index=0):
     target=container or st
     previous=st.session_state.get(key+'_remembered')
     if previous in options:index=options.index(previous)
-    selected=target.selectbox(label,options,index=index,key=key)
+    selected=_remembered_input("ui_filters:84:13", target.selectbox, label,options,index=index,key=key)
     st.session_state[key+'_remembered']=selected
     return selected
