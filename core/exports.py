@@ -1,6 +1,25 @@
 
 from pathlib import Path
 import inspect
+import hashlib
+import numpy as np
+
+
+def map_extent_signature(figure):
+    bounds=[]
+    for trace in figure.data:
+        if not hasattr(trace,"x") or not hasattr(trace,"y"):continue
+        extent=[]
+        for coordinate in (trace.x,trace.y):
+            if coordinate is None:extent.extend([None,None]);continue
+            try:
+                a=np.asarray(coordinate,dtype=float);a=a[np.isfinite(a)]
+                extent.extend([float(a.min()),float(a.max())] if a.size else [None,None])
+            except (ValueError,TypeError):extent.extend([None,None])
+        bounds.append(extent)
+    valid=[b for b in bounds if all(v is not None for v in b)]
+    footprint=(min(b[0] for b in valid),max(b[1] for b in valid),min(b[2] for b in valid),max(b[3] for b in valid)) if valid else None
+    return hashlib.sha256(repr(footprint).encode()).hexdigest()[:12]
 
 
 def static_figure_bytes(figure, format='png', width=1200, height=800, scale=2):
@@ -27,7 +46,7 @@ def render_chart(figure, **kwargs):
         lock=st.checkbox('Equal X/Y scale',value=True,key=f'{chart_key}_equal_scale',
             help='Turn off to zoom to any rectangular range. Unequal scales distort grain shapes visually.')
         figure.update_yaxes(scaleanchor='x' if lock else False)
-        figure.update_layout(uirevision=f'{identity}:{st.session_state.get(epoch_key,0)}:{lock}')
+        figure.update_layout(uirevision=f'{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key,0)}:{lock}')
     else:
         figure.update_layout(uirevision=str(chart_key))
     if identity is not None:
