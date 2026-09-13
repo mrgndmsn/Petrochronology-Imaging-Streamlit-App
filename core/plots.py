@@ -148,10 +148,15 @@ def _add_selection_overlays(figure, selections):
             if "selection_type" in table
             else ("profile" if "distance_along_profile_um" in table else "selection")
         )
-        color = '#ff0000'
+        from .selection_style import selection_color, profile_buffer
+        color = selection_color(table)
+        label=str(table.selection_id.iloc[0]) if 'selection_id' in table else str(name).split('::')[-1]
+        figure.add_scattergl(x=[float(table.x.mean())],y=[float(table.y.mean())],mode='text',text=[label],
+            textfont=dict(color=color,size=14),name=label+' label',legendgroup='selection::'+str(name),showlegend=False,hoverinfo='skip')
         geometry=table.attrs.get('selection_geometry')
         if geometry:
             coords=np.asarray(geometry['coordinates'],float)
+            if geometry['kind']=='profile':profile_buffer(figure,coords,geometry.get('width',0),color,label+' buffer')
             shape=geometry['kind']
             if shape=='rectangle':
                 x0,x1,y0,y1=coords
@@ -163,7 +168,7 @@ def _add_selection_overlays(figure, selections):
             else:
                 if shape=='lasso':coords=np.vstack([coords,coords[0]])
                 xs,ys=coords[:,0],coords[:,1]
-            figure.add_scatter(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
+            figure.add_scattergl(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
                 name=str(name).split('::')[-1],legendgroup='selection::'+str(name))
             continue
         if kind == "profile":
@@ -210,7 +215,7 @@ def _add_selection_overlays(figure, selections):
                                           ((r-1,c),(x0,y0,x1,y0)),((r+1,c),(x0,y1,x1,y1))]:
                         if neighbor not in cells:
                             xa,ya,xb,yb=ends;xs.extend([xa,xb,None]);ys.extend([ya,yb,None])
-            figure.add_scatter(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
+            figure.add_scattergl(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
                 name=str(name).split('::')[-1],legendgroup='selection::'+str(name))
 
 
