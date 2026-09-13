@@ -22,10 +22,10 @@ from core.ui_filters import filter_table_ui
 
 
 
-st.set_page_config(page_title="Desktop analysis tools", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Spatial analysis tools", page_icon="📈", layout="wide")
 initialize_state()
 mineral_points = mineral_layers_ui(st.session_state, "summary")
-st.title("Mineral, boundary, profile, and grouped U–Pb tools")
+st.title("Spatial analysis tools")
 tabs = st.tabs(
     ["Mineral summaries", "Boundary comparisons", "Profile summaries", "Grouped U–Pb"]
 )
