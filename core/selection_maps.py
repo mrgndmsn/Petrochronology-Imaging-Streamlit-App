@@ -33,33 +33,8 @@ def collect_geometry(layers, all_layers, grains, kind, geometry, name, width=0.,
     return result
 
 
-def combined_map_figure(layers,overlays,color_by,palette):
-    figure=map_figure(layers[0],selectable=True)
-    for layer in layers[1:]:
-        other=map_figure(layer,selectable=True,show_colorbar=False)
-        figure.add_traces(list(other.data))
-    if color_by=='Mineral':
-        # Only measured pixels participate; no invented zeros or blended overlaps.
-        figure.data=()
-        for layer in layers:
-            r,c=np.where(np.isfinite(layer.values));x,y=layer.coordinates_at(r,c)
-            figure.add_scattergl(x=x,y=y,mode='markers',name=layer.mineral_id,legendgroup=layer.mineral_id,
-                meta={'color_by':'mineral_id'},marker=dict(color=palette[layer.mineral_id],size=5,symbol='square'),
-                customdata=np.column_stack([layer.values[r,c]]),
-                hovertemplate=f'{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<br>{layer.channel}=%{{customdata[0]}}<extra></extra>')
-        figure.update_layout(legend_title='Mineral')
-    else:
-        finite=[l.values[np.isfinite(l.values)] for l in layers]
-        finite=[v for v in finite if len(v)]
-        if finite:
-            lo=min(v.min() for v in finite);hi=max(v.max() for v in finite)
-            for trace in figure.data:
-                if trace.type=='heatmap':trace.update(zmin=lo,zmax=hi)
-                elif trace.type=='scattergl' and trace.marker.colorscale:trace.marker.update(cmin=lo,cmax=hi)
-    from .plots import _add_selection_overlays
-    _add_selection_overlays(figure,overlays)
-    figure.update_layout(meta={'map_layer_key':selection_context(layers)},title=layers[0].channel)
-    return figure
+def combined_map_figure(layers,overlays,color_by,palette,**display):
+    return map_overlay_figure(layers,{}, {},overlays,color_by,palette,selectable=color_by!='Mineral',**display)
 
 
 def profile_plot_table(table, channels, bin_count=0):
