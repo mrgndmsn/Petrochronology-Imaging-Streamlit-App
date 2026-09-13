@@ -20,7 +20,11 @@ if not st.session_state.grain_results:
     st.stop()
 
 from core.ui_filters import channel_layers_ui
-visible=channel_layers_ui(st.session_state,'grain_compare',grain_results_only=True)
+available=[l for l in st.session_state.layers.values() if l.key in st.session_state.grain_results]
+if not available:
+    st.info('No detected grain maps are available.');st.stop()
+channel=st.selectbox('Channel',list(dict.fromkeys(l.channel for l in available)),key='grain_compare_channel')
+visible=[l for l in available if l.channel==channel]
 chosen=[l.key for l in visible]
 parts = []
 pixel_parts = []
