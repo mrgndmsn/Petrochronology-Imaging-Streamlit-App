@@ -103,8 +103,7 @@ if st.button("Undo last split or merge", disabled=not history):
     ] = restored.pixel_table
     st.rerun()
 with tab_split:
-    gid = st.selectbox("Grain ID", ids, key="split_gid")
-    draft_key = f"split_points::{key}::{gid}"
+    draft_key = f"split_points::{key}"
     st.session_state.setdefault(draft_key, [])
     split_figure = editing_map()
     endpoints = st.session_state[draft_key]
@@ -120,7 +119,7 @@ with tab_split:
         on_select="rerun",
         selection_mode=("points",),
     )
-    draft_key = f"split_points::{key}::{gid}"
+    draft_key = f"split_points::{key}"
     st.session_state.setdefault(draft_key, [])
     clicked = clicked_xy(event)
     event_id = getattr(event, 'event_id', None)
@@ -159,19 +158,15 @@ with tab_split:
         key=draft_key+'_use',
         disabled=len(st.session_state[draft_key]) != 2,
     )
-    split_all = st.checkbox("Split all grains crossed by the line")
+    st.caption("Apply splits every grain crossed by this line; no grain number is required. Extend the line beyond both edges of the grain.")
     if st.button("Apply split", type="primary"):
         try:
             if use_clicked:
                 (x0, y0), (x1, y1) = st.session_state[draft_key]
                 c0, r0 = layer.fractional_indices(x0, y0)
                 c1, r1 = layer.fractional_indices(x1, y1)
-            if split_all:
-                new_labels=split_crossed_grains(result.labels,(c0,r0),(c1,r1),width,
-                    int(result.settings.get("connectivity",8)),int(result.settings.get("minimum_pixels",1)))
-            else:
-                new_labels=split_grain(result.labels,gid,(c0,r0),(c1,r1),width,
-                    int(result.settings.get("connectivity",8)),int(result.settings.get("minimum_pixels",1)))
+            new_labels=split_crossed_grains(result.labels,(c0,r0),(c1,r1),width,
+                int(result.settings.get("connectivity",8)),int(result.settings.get("minimum_pixels",1)))
             replace_labels(new_labels)
             st.success("Grain split.")
             st.rerun()
@@ -186,25 +181,43 @@ with tab_merge:
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
+    render_chart(editing_map(), width="stretch", key=f"merge_result_map::{key}")
 with tab_center:
     gid = st.selectbox("Grain ID", ids, key="center_gid")
     row = result.shape_table.loc[result.shape_table.grain_id == gid].iloc[0]
+    center_key = f"{key}::{gid}"
+    pending_key = 'pending_center::'+center_key
+    center_figure = editing_map()
+    pending = st.session_state.get(pending_key)
+    if pending is not None:
+        center_figure.add_scattergl(x=[pending[0]], y=[pending[1]], mode='markers+text',
+            text=[f'Proposed center {gid}'], textposition='top center',
+            marker=dict(color='#ff3333',size=14,symbol='cross'),
+            textfont=dict(color='#ff3333'), name='Proposed center')
     center_event = render_chart(
-        editing_map(),
+        center_figure,
         width="stretch",
         key=f"center_map::{key}::{gid}",
         on_select="rerun",
         selection_mode=("points",),
     )
     clicked = clicked_xy(center_event)
+    center_event_id = getattr(center_event, 'event_id', None)
+    if clicked is not None and center_event_id is not None and st.session_state.get(pending_key+'_event') != center_event_id:
+        st.session_state[pending_key+'_event'] = center_event_id
+        st.session_state[pending_key] = clicked
+        st.rerun()
+    clicked = st.session_state.get(pending_key, clicked)
     if clicked is not None:st.caption(f"Selected center: X={clicked[0]:.4g}, Y={clicked[1]:.4g} µm. Click Save moved center to apply.")
+    center_mode = st.radio("Center input", ["Map click", "Typed coordinates"], horizontal=True)
     c = st.columns(2)
     cx = c[0].number_input("Center X (µm)", value=float(row.centroid_x_um))
     cy = c[1].number_input("Center Y (µm)", value=float(row.centroid_y_um))
     center_key = f"{key}::{gid}"
-    if st.button("Save moved center", type="primary"):
-        chosen_center = clicked if clicked is not None else (cx, cy)
+    if st.button("Save moved center", type="primary", disabled=center_mode == "Map click" and clicked is None):
+        chosen_center = clicked if center_mode == "Map click" and clicked is not None else (cx, cy)
         st.session_state.manual_grain_centers[center_key] = list(chosen_center)
+        st.session_state.pop(pending_key, None)
         st.rerun()
     if center_key in st.session_state.manual_grain_centers:
         st.write("Saved center:", st.session_state.manual_grain_centers[center_key])
@@ -270,6 +283,15 @@ with tab_radial:
         else []
     )
     if channel_choices:
+        from core.radial_groups import apply_groups
+        st.caption('Group numbers using one line per group, for example Left = 1,2,3. Unlisted grains/profiles remain separate.')
+        grain_groups = st.text_area('Grain groups', key='radial_grain_groups::'+key)
+        profile_groups = st.text_area('Profile number groups', key='radial_profile_groups::'+key)
+        try:
+            pixels = apply_groups(pixels, grain_groups, profile_groups)
+        except ValueError as exc:
+            st.error(str(exc))
+            pixels = apply_groups(pixels, '', '')
         channel = st.selectbox(
             "Profile value",
             channel_choices,
@@ -279,17 +301,22 @@ with tab_radial:
                 else 0
             ),
         )
-        render_chart(
-            px.scatter(
-                pixels,
-                x="distance_normalized",
-                y=channel,
-                color="profile_id",
-                opacity=0.35,
-                template="plotly_white",
-            ),
-            width="stretch",
-        )
+        from core.xy_link import ROW_ID, capture_plot_selection
+        pixels=pixels.reset_index(drop=True)
+        pixels[ROW_ID]=__import__('numpy').arange(len(pixels))
+        radial_figure=px.scatter(pixels,x='distance_normalized',y=channel,color='comparison_group',
+            custom_data=[ROW_ID],opacity=.35,template='plotly_white')
+        radial_figure.update_layout(dragmode='lasso')
+        radial_event=render_chart(radial_figure,width='stretch',key='radial_pixel_selection',
+            on_select='rerun',selection_mode=('points','box','lasso'))
+        capture_plot_selection(pixels,radial_event,st.session_state,source="radial")
+        st.caption('Lasso or box-select profile pixels to highlight them on matching maps.')
+        import pandas as pd
+        grouped = pixels.copy()
+        grouped['distance_bin'] = pd.cut(grouped.distance_normalized, bins=__import__('numpy').linspace(0,1,int(bins)+1), include_lowest=True, labels=False)
+        grouped = grouped.groupby(['comparison_group','distance_bin'], observed=True).agg(distance=('distance_normalized','mean'),mean=(channel,'mean'),sd=(channel,'std'),n=(channel,'count')).reset_index()
+        render_chart(px.line(grouped,x='distance',y='mean',color='comparison_group',error_y='sd',markers=True,
+            title='Grouped profiles: pixel mean ±1 SD'),width='stretch')
     st.dataframe(
         radial.groupby(["grain_id", "radial_zone"])
         .size()
