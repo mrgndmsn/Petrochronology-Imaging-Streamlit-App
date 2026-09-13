@@ -15,18 +15,17 @@ from core.project_io import save_project, load_project
 st.set_page_config(page_title='Workspace tools', layout='wide')
 initialize_state()
 st.title('Workspace channel tools')
-options = layer_options()
-if not options:
-    st.info('Import map layers first.')
-    st.stop()
-label = st.selectbox('Reference dataset/channel', list(options))
-layer = st.session_state.layers[options[label]]
+from core.ui_filters import channel_layers_ui
+visible=channel_layers_ui(st.session_state,'workspace')
+reference=st.selectbox('Dataset to modify',[l.key for l in visible],format_func=lambda k:' | '.join(k.split('::')[:3]))
+layer=st.session_state.layers[reference]
+st.caption('Filters list all matching datasets. Workspace operations below modify the explicitly selected dataset.')
 history = st.session_state.setdefault('workspace_history', [])
 
 
 def snapshot():
     return save_project(st.session_state.layers, st.session_state.tables, st.session_state.grain_results,
-                        st.session_state.selections, st.session_state.manual_grain_centers, st.session_state.point_layers, st.session_state.calculation_definitions)
+                        st.session_state.selections, st.session_state.manual_grain_centers, st.session_state.point_layers, st.session_state.calculation_definitions, st.session_state.mineral_colors)
 
 
 def invalidate_histories():
