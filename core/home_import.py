@@ -175,6 +175,10 @@ with st.expander("Import aligned matrix files"):
             del xcoords, ycoords
             commit_layers(layers)
             st.success(f"Imported {len(layers)} aligned channels.")
+            status=[{'channel':l.channel,'finite_pixels':int(np.isfinite(l.values).sum()),'source_file':l.metadata.get('source_file','')} for l in layers.values()]
+            st.dataframe(status,width='stretch',hide_index=True)
+            empty=[r['channel'] for r in status if r['finite_pixels']==0]
+            if empty:st.warning('Imported but empty (no finite numeric values): '+', '.join(empty)+'. These channels cannot display a map or define mineral presence. Choose a populated channel; no values have been invented or filled in.')
         except Exception as exc:
             st.error(f"Matrix import failed: {exc}")
 
