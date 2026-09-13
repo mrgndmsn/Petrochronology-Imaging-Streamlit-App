@@ -29,17 +29,28 @@ def select_geometry(kind, geometry, name, width=0.0, sampling=None, spacing=1.0)
 st.subheader('Draw directly on the map')
 mode, name_column, size_column = st.columns([1, 1, 1])
 draw_mode = mode.selectbox('Tool', ['Rectangle domain', 'Lasso domain', 'Lasso vertices', 'Spot', 'Profile vertices'])
-direct_name = name_column.text_input('Name', 'Domain 1', key='direct_name')
+direct_name = name_column.text_input('Name', 'Domain 1', key='direct_name',help='This is the name saved with the next drawn lasso, rectangle, spot or profile.')
+from core.selection_style import COLORS, profile_buffer
+new_color=st.color_picker('New selection color',COLORS[len(st.session_state.selections)%len(COLORS)],key=f'new_selection_color_{len(st.session_state.selections)}')
+st.caption(f'Next drawn selection will be saved as: {direct_name}. Existing names receive a numeric suffix.')
 direct_size = size_column.number_input('Spot radius / profile half-width (µm)', min_value=0.0, value=0.0, key='direct_size')
 selection_modes = {'Rectangle domain': ('box',), 'Lasso domain': ('lasso',), 'Spot': ('points',), 'Profile vertices': ('points',), 'Lasso vertices': ('points',)}
-drawing_figure = combined_map_figure(visible_layers, matching_overlays, color_by, mineral_palette(st.session_state))
+with st.expander('Map color scale'):
+    finite=np.concatenate([l.values[np.isfinite(l.values)] for l in visible_layers])
+    lo=st.number_input('Color minimum',value=float(np.nanpercentile(finite,2)),key='selection_vmin')
+    hi=st.number_input('Color maximum',value=float(np.nanpercentile(finite,98)),key='selection_vmax')
+    log_color=st.checkbox('Log10 color scale (positive values only)',key='selection_log_color')
+    scale=st.selectbox('Color scale',['Viridis','Turbo','Plasma','Inferno','Magma','Cividis','RdBu','Jet'],key='selection_colorscale')
+    if hi<lo:st.error('Color maximum must be at least the minimum.');st.stop()
+drawing_figure = combined_map_figure(visible_layers, matching_overlays, color_by, mineral_palette(st.session_state),vmin=lo,vmax=hi,log_color=log_color,colorscale=scale)
 draft_vertices = st.session_state.get(f'profile_vertices::{context_key}', [])
 lasso_vertices=st.session_state.get(f'lasso_vertices::{context_key}',[])
 if draw_mode=='Lasso vertices' and lasso_vertices:
     points_to_draw=lasso_vertices+[lasso_vertices[0]] if len(lasso_vertices)>=3 else lasso_vertices
-    drawing_figure.add_scatter(x=[p[0] for p in points_to_draw],y=[p[1] for p in points_to_draw],mode='lines+markers',line=dict(color='red',dash='solid'),name='Draft lasso')
+    drawing_figure.add_scatter(x=[p[0] for p in points_to_draw],y=[p[1] for p in points_to_draw],mode='lines+markers',line=dict(color=new_color,dash='solid'),name='Draft lasso')
 if draw_mode == 'Profile vertices' and draft_vertices:
-    drawing_figure.add_scatter(x=[p[0] for p in draft_vertices], y=[p[1] for p in draft_vertices], mode='lines+markers+text', text=[str(i + 1) for i in range(len(draft_vertices))], textposition='top center', line=dict(color='red',dash='solid'), marker=dict(size=9), name='Draft profile')
+    profile_buffer(drawing_figure,draft_vertices,direct_size,new_color,'Draft profile buffer')
+    drawing_figure.add_scatter(x=[p[0] for p in draft_vertices], y=[p[1] for p in draft_vertices], mode='lines+markers+text', text=[str(i + 1) for i in range(len(draft_vertices))], textposition='top center', line=dict(color=new_color,dash='solid'), marker=dict(size=9), name='Draft profile')
 drawing_figure.update_layout(dragmode={'Rectangle domain': 'select', 'Lasso domain': 'lasso', 'Spot': 'pan', 'Profile vertices': 'pan', 'Lasso vertices': 'pan'}[draw_mode])
 st.caption('Rectangle/lasso: drag on the map, then save below. Spot/profile: click a measured pixel, then save the spot or add the vertex. Use the toolbar to zoom/pan, then Box Select or Lasso Select to resume drawing. Profiles use successive clicked vertices.')
 event = render_chart(drawing_figure, width='stretch', key=f'selection_map::{context_key}', on_select='rerun', selection_mode=selection_modes[draw_mode])
@@ -66,6 +77,7 @@ if event_id is not None and event_id==st.session_state.get('saved_draw_event'):
     direct_selection={}
 
 created = None
+if direct_selection:st.caption(f'Save the current drawing as “{direct_name}”. Change Name above before clicking Save if needed.')
 effective_mode = draw_mode
 if first_geometry(direct_selection,'lasso'):
     effective_mode='Lasso domain'
@@ -168,6 +180,8 @@ with tab_profile:
             created = (name, select_geometry('profile', points(raw), 'profile', buffer) if sampling == 'Buffered pixels' else select_geometry('profile', points(raw), 'profile', sampling='bilinear' if sampling.startswith('Bilinear') else 'nearest', spacing=spacing))
         except Exception as exc:
             st.error(str(exc))
+if created and not created[0].strip():
+    st.error('Enter a selection name before saving.');created=None
 if created and created[1].empty:
     st.warning('The drawn area contains no measured pixel centers in the current filters. Draw a larger area or change the filters.')
     created=None
@@ -176,11 +190,13 @@ if created:
     original_name, frame_to_save = created
     unique_name = original_name
     suffix = 2
-    while f'{context_key}::{unique_name}' in st.session_state.selections:
+    existing_names={str(f.selection_id.iloc[0]) for f in st.session_state.selections.values() if len(f) and 'selection_id' in f}
+    while unique_name in existing_names:
         unique_name = f'{original_name} {suffix}'
         suffix += 1
     created = (unique_name, frame_to_save)
     created[1]['selection_id'] = created[0]
+    created[1].attrs['display_color']=new_color
     key = f'{context_key}::{created[0]}'
     st.session_state.selections[key] = created[1]
     table_name = f'Selection | {created[0]} | {context_key}'
@@ -188,8 +204,10 @@ if created:
     st.session_state.active_table_name = table_name
     if draw_mode=='Lasso vertices':st.session_state[f'lasso_vertices::{context_key}']=[]
     if draw_mode=='Profile vertices':st.session_state[f'profile_vertices::{context_key}']=[]
+    st.session_state['last_saved_selection_name']=created[0]
     st.session_state['saved_draw_event']=event_id
     st.rerun()
+if 'last_saved_selection_name' in st.session_state:st.success('Last saved selection: '+st.session_state.last_saved_selection_name)
 matching = filtered_saved_selections(st.session_state.selections, visible_layers)
 if st.button('Undo last selection change', disabled=not st.session_state.selection_history):
     previous = st.session_state.selection_history.pop()
@@ -199,6 +217,13 @@ if matching:
     chosen = st.selectbox('Saved selection', matching, format_func=lambda key: key.split('::')[-1])
     table = matching[chosen]
     original_count = len(st.session_state.selections[chosen])
+    old_color=st.session_state.selections[chosen].attrs.get('display_color','#ff0000')
+    updated_color=st.color_picker('Saved selection color',old_color,key='saved_selection_color::'+chosen)
+    if updated_color!=old_color:
+        st.session_state.selections[chosen].attrs['display_color']=updated_color
+        for f in st.session_state.tables.values():
+            if len(f) and 'selection_id' in f and str(f.selection_id.iloc[0])==str(table.selection_id.iloc[0]):f.attrs['display_color']=updated_color
+        st.rerun()
     st.caption(f'{len(table)} of {original_count} saved rows match the current sample/mineral/run filters.')
     if len(table) < original_count:
         copy_name = st.text_input('Filtered selection name', chosen.split('::')[-1]+' filtered')
