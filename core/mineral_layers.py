@@ -1,3 +1,4 @@
+from core.page_memory import remembered_input as _remembered_input
 import numpy as np
 import pandas as pd 
 from . models import PointLayer
@@ -28,7 +29,7 @@ def mineral_layers_ui(state, key):
     choices=['All imported minerals']
     if state.point_layers:choices.append('Point tables')
     if state.layers:choices.append('Raster mineral maps')
-    mode=st.selectbox('Mineral data source',choices,key=f'{key}_source')
+    mode=_remembered_input("mineral_layers:31:9", st.selectbox, 'Mineral data source',choices,key=f'{key}_source')
     points=dict(state.point_layers) if mode!='Raster mineral maps' else {}
     if state.layers and mode!='Point tables':
         groups={}
@@ -41,8 +42,8 @@ def mineral_layers_ui(state, key):
             for identity,group in groups.items():
                 labels={l.key:l.channel+('' if np.isfinite(l.values).any() else ' (no finite values)') for l in group}
                 first=next((i for i,l in enumerate(group) if np.isfinite(l.values).any()),0)
-                refs.append(st.selectbox('Presence channel | '+' | '.join(identity),list(labels),index=first,format_func=labels.get,key=f'{key}_presence_{identity}'))
-            rule=st.selectbox('Presence rule',['Finite pixels','Greater than threshold'],key=f'{key}_presence_rule')
-            threshold=st.number_input('Mineral presence threshold',value=0.,key=f'{key}_presence_threshold')
+                refs.append(_remembered_input("mineral_layers:44:28", st.selectbox, 'Presence channel | '+' | '.join(identity),list(labels),index=first,format_func=labels.get,key=f'{key}_presence_{identity}'))
+            rule=_remembered_input("mineral_layers:45:17", st.selectbox, 'Presence rule',['Finite pixels','Greater than threshold'],key=f'{key}_presence_rule')
+            threshold=_remembered_input("mineral_layers:46:22", st.number_input, 'Mineral presence threshold',value=0.,key=f'{key}_presence_threshold')
         points.update(raster_mineral_points(state.layers,refs,'finite' if rule=='Finite pixels' else 'greater_than',threshold))
     return {p.key:p for p in filter_layers_ui(points.values(),key+'_filters')}
