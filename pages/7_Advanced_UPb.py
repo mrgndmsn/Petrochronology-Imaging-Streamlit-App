@@ -27,11 +27,11 @@ st.title("Advanced U–Pb statistics")
 st.caption(
     "Select whether the uploaded absolute uncertainty columns contain 1σ or 2SE values."
 )
-if not st.session_state.tables:
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import an analysis table first.")
     st.stop()
-name = st.selectbox("Data source", list(st.session_state.tables))
-frame = filter_table_ui(st.session_state.tables[name], name, "advanced_upb")
+from core.data_sources import analysis_source_ui
+name,frame=analysis_source_ui(st.session_state,"advanced_upb")
 if frame.empty:
     st.warning("No rows match the current filters.")
     st.stop()
