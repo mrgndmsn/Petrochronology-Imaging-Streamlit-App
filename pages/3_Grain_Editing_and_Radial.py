@@ -28,7 +28,17 @@ st.title("Manual grain editing and radial profiles")
 if not st.session_state.grain_results:
     st.info("Detect grains on the Map and Grains page first.")
     st.stop()
-key = st.selectbox("Grain set", list(st.session_state.grain_results))
+from core.ui_filters import channel_layers_ui
+from core.selection_maps import map_overlay_figure, filtered_saved_selections
+from core.mineral_colors import mineral_palette
+visible=channel_layers_ui(st.session_state,'edit',grain_results_only=True)
+map_color=st.selectbox('Map color',['Concentration','Mineral'])
+key=st.selectbox('Grain set to edit',[l.key for l in visible],format_func=lambda k:' | '.join(k.split('::')[:3]))
+st.caption('All filtered maps are overlaid. Split, merge, and center edits affect the selected grain set only.')
+def editing_map():
+    return map_overlay_figure(visible,st.session_state.grain_results,st.session_state.manual_grain_centers,
+        filtered_saved_selections(st.session_state.selections,visible),map_color,mineral_palette(st.session_state),selectable=True)
+
 result = st.session_state.grain_results[key]
 layer = st.session_state.layers[result.layer_key]
 ids = (
@@ -95,7 +105,7 @@ if st.button("Undo last split or merge", disabled=not history):
 with tab_split:
     gid = st.selectbox("Grain ID", ids, key="split_gid")
     event = render_chart(
-        map_figure(layer, result.labels, selectable=True),
+        editing_map(),
         width="stretch",
         key=f"split_map::{key}",
         on_select="rerun",
@@ -163,15 +173,7 @@ with tab_center:
     gid = st.selectbox("Grain ID", ids, key="center_gid")
     row = result.shape_table.loc[result.shape_table.grain_id == gid].iloc[0]
     center_event = render_chart(
-        map_figure(
-            layer,
-            result.labels,
-            grain_shapes=result.shape_table,
-            manual_centers={
-                str(gid): st.session_state.manual_grain_centers.get(f"{key}::{gid}")
-            },
-            selectable=True,
-        ),
+        editing_map(),
         width="stretch",
         key=f"center_map::{key}::{gid}",
         on_select="rerun",
