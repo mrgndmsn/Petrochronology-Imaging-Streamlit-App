@@ -253,22 +253,25 @@ with tab_pca:
     )
     if st.button("Run PCA"):
         try:
-            scores, loadings, variance = run_pca(frame, selected)
+            pca_frame=frame.reset_index(drop=True)
+            scores, loadings, variance = run_pca(pca_frame, selected)
+            st.session_state['pca_pixel_source']=pca_frame.loc[scores.index].reset_index(drop=True)
             st.session_state["pca_output"] = (scores, loadings, variance)
             st.session_state["pca_source"] = name
         except Exception as exc:
             st.error(str(exc))
     if "pca_output" in st.session_state and st.session_state.get("pca_source") == name:
         scores, loadings, variance = st.session_state.pca_output
-        render_chart(
-            px.scatter(
-                scores,
-                x="PC1",
-                y="PC2" if "PC2" in scores else "PC1",
-                template="plotly_white",
-            ),
-            width="stretch",
-        )
+        linked_scores=scores.reset_index(drop=True).copy()
+        linked_scores[ROW_ID]=np.arange(len(linked_scores))
+        score_figure=px.scatter(linked_scores,x='PC1',y='PC2' if 'PC2' in scores else 'PC1',
+            custom_data=[ROW_ID],template='plotly_white')
+        score_figure.update_layout(dragmode='lasso')
+        score_event=render_chart(score_figure,width='stretch',key='pca_score_selection',
+            on_select='rerun',selection_mode=('points','box','lasso'))
+        from core.xy_link import capture_plot_selection
+        capture_plot_selection(st.session_state.get('pca_pixel_source'),score_event,st.session_state,source="pca")
+        st.caption('Lasso or box-select PCA scores to highlight their pixels on matching maps.')
         left, right = st.columns(2)
         left.subheader("Loadings")
         left.dataframe(loadings, width = "stretch")
