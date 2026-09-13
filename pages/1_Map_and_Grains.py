@@ -14,7 +14,8 @@ from core.state import initialize_state, layer_options
 
 st.set_page_config(page_title = "Map and grains", page_icon = "🗺️", layout = "wide")
 initialize_state()
-st.title("Map and grain analysis")
+st.title("Grain detection")
+st.caption("Detect grains here, then use Editing and radial above to split, merge, or move centers. Cyan ellipses, white center crosses, and grain numbers appear on the map.")
 from core.selection_maps import map_overlay_figure, filtered_saved_selections, selection_context
 from core.mineral_colors import mineral_palette
 from core.ui_filters import channel_layers_ui
