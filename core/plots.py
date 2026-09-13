@@ -234,7 +234,8 @@ def _add_grain_centers_and_spokes(figure, shapes, manual_centers, spoke_count, l
                 mode="markers+text",
                 text=[str(gid)],
                 textposition="top center",
-                marker={"size": 7, "color": "red", "symbol": "x"},
+                textfont={"color":"white","size":15},
+                marker={"size": 10, "color": "white", "symbol": "x"},
                 name=f"Center {gid}",
                 showlegend=False,
             )
@@ -243,10 +244,20 @@ def _add_grain_centers_and_spokes(figure, shapes, manual_centers, spoke_count, l
         if center is not None and layer is not None and labels is not None:
             major, minor, angle = refit_moved_ellipse(layer, SimpleNamespace(labels=labels, shape_table=shapes), gid, center)
             shape['grain_length_um'], shape['grain_width_um'], shape['orientation_deg'] = major, minor, angle
+        major = float(shape.get('grain_length_um', np.nan))
+        minor = float(shape.get('grain_width_um', np.nan))
+        angle = np.deg2rad(float(shape.get('orientation_deg', 0.)))
+        if np.isfinite([major, minor, angle]).all() and major > 0 and minor > 0:
+            t = np.linspace(0, 2*np.pi, 129)
+            u, v = major/2*np.cos(t), minor/2*np.sin(t)
+            figure.add_trace(go.Scatter(x=cx+u*np.cos(angle)-v*np.sin(angle),
+                y=cy+u*np.sin(angle)+v*np.cos(angle), mode='lines',
+                line=dict(color='#00ffff',width=2), name=f'Ellipse {gid}',
+                showlegend=False, hoverinfo='name'))
         if spoke_count > 0:
             for spoke in ordered_spokes(shape, (cx,cy), spoke_count):
                 figure.add_trace(go.Scatter(x=[cx,spoke['xedge']],y=[cy,spoke['yedge']],mode='lines+text',
-                    text=['',str(spoke['profile_number'])],line=dict(color='white',width=1),
+                    text=['',str(spoke['profile_number'])],textfont=dict(color='white',size=13),line=dict(color='white',width=2),
                     showlegend=False,hoverinfo='skip'))
 
 
