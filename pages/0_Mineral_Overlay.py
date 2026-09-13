@@ -15,25 +15,15 @@ st.title("Co-located mineral overlay")
 if not mineral_points:
     st.info("Import mineral point tables or raster maps on the Home page first.")
     st.stop()
-samples = sorted({v.sample_id for v in mineral_points.values()})
-sample = st.selectbox("Sample", samples)
-layers = [v for v in mineral_points.values() if v.sample_id == sample]
-runs = sorted({v.run_id for v in layers})
-run = st.selectbox("Run", runs)
-layers = [v for v in layers if v.run_id == run]
-selected = st.multiselect(
-    "Minerals", [v.mineral_id for v in layers], default=[v.mineral_id for v in layers]
-)
-colors = [
-    "#e41a1c",
-    "#377eb8",
-    "#4daf4a",
-    "#984ea3",
-    "#ff7f00",
-    "#ffff33",
-    "#a65628",
-    "#f781bf",
-]
+layers=list(mineral_points.values())
+selected={l.mineral_id for l in layers}
+from core.mineral_colors import mineral_palette
+palette=mineral_palette(st.session_state)
+with st.container():
+    st.subheader("Mineral colors — shared across plots")
+    st.caption("Choose each mineral color here; other plots use it when grouped by mineral ID.")
+    for mineral in sorted(palette):
+        palette[mineral]=st.color_picker(mineral,palette[mineral],key=f'mineral_color::{mineral}')
 size = st.slider("Marker size", 1, 12, 3)
 opacity = st.slider("Opacity", 0.05, 1.0, 0.7)
 figure = go.Figure()
@@ -57,7 +47,7 @@ for index, layer in enumerate(layers):
             mode="markers",
             marker={
                 "size": size,
-                "color": colors[index % len(colors)],
+                "color": palette[layer.mineral_id],
                 "opacity": opacity,
             },
             name=layer.mineral_id,
@@ -80,7 +70,7 @@ figure.update_layout(
     xaxis_title="X (µm)",
     yaxis_title="Y (µm)",
     legend_title="Mineral",
-    meta={"map_layer_key":f"overlay::{sample}::{run}"},
+    meta={"map_layer_key":"overlay::"+"|".join(sorted(mineral_points))},
 )
 figure.update_yaxes(scaleanchor="x")
 render_chart(figure, width="stretch")
