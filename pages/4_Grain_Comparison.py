@@ -19,15 +19,13 @@ if not st.session_state.grain_results:
     st.info("Detect grains for at least one sample first.")
     st.stop()
 
-labels = {
-    layer_label(st.session_state.layers[result.layer_key]): key
-    for key, result in st.session_state.grain_results.items()
-}
-chosen = st.multiselect("Grain sets", list(labels), default=list(labels))
+from core.ui_filters import channel_layers_ui
+visible=channel_layers_ui(st.session_state,'grain_compare',grain_results_only=True)
+chosen=[l.key for l in visible]
 parts = []
 pixel_parts = []
 for label in chosen:
-    result = st.session_state.grain_results[labels[label]]
+    result = st.session_state.grain_results[label]
     parts.append(result.shape_table.copy())
     pixel_parts.append(result.pixel_table.copy())
 if not parts:
