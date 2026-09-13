@@ -49,7 +49,7 @@ with controls:
     scale_position = st.selectbox(
         "Scale bar position", ["Bottom left", "Bottom right", "Top left", "Top right"]
     )
-    show_spokes = st.slider("Radial spokes", 0, 32, 0)
+    show_spokes = 0
 
 with display:
     selection_overlays=filtered_saved_selections(st.session_state.selections,visible)
