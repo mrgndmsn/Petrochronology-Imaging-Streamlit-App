@@ -76,7 +76,7 @@ figure.update_layout(
     xaxis_title="X (µm)",
     yaxis_title="Y (µm)",
     legend_title="Mineral",
-    meta={"map_layer_key":"overlay::"+"|".join(sorted(mineral_points))},
+    meta={"map_layer_key":"overlay::"+"|".join(sorted(mineral_points)), "dataset_identities":[[l.sample_id,l.mineral_id,l.run_id] for l in layers]},
 )
 figure.update_yaxes(scaleanchor="x")
 render_chart(figure, width="stretch")
