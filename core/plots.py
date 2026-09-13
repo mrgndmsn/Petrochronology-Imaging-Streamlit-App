@@ -178,7 +178,7 @@ def _add_selection_overlays(figure, selections):
                     name=str(name),
                 )
             )
-        elif kind == "spot":
+        elif kind in ("spot", "xy_link"):
             figure.add_trace(
                 go.Scattergl(
                     x=table.x,
@@ -293,6 +293,8 @@ def xy_figure(
         "opacity": opacity,
         "render_mode": "webgl" if len(frame) > 2000 else "auto",
     }
+    if "__xy_link_row__" in frame:
+        kwargs["custom_data"] = ["__xy_link_row__"]
     if color and color in frame:
         kwargs["color"] = color
     if symbol and symbol in frame:
