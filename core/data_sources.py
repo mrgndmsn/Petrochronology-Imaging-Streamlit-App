@@ -1,4 +1,5 @@
 """Analysis sources combine equivalent observations across datasets, not analysis levels."""
+from core.page_memory import remembered_input as _remembered_input
 import numpy as np
 import pandas as pd
 
@@ -49,14 +50,14 @@ def analysis_source_ui(state,key,label='Data source',tables=None):
         tables=state.get('tables',{})
         all_label='All imported observations'
         names=[all_label,'All grain means','All grain pixels','All saved selections']+list(tables)
-    name=st.selectbox(label,list(dict.fromkeys(names)),key=key+'_source')
+    name=_remembered_input("data_sources:52:9", st.selectbox, label,list(dict.fromkeys(names)),key=key+'_source')
     if name==all_label:
         frame=(pd.concat(list(tables.values()),ignore_index=True,sort=False) if tables else pd.DataFrame()) if all_label=='All matching tables' else imported_observations(state)
     elif name in ('All grain means','All grain pixels'):
         results=list(state.get('grain_results',{}).values())
         channels=list(dict.fromkeys(state['layers'][r.layer_key].channel for r in results if r.layer_key in state.get('layers',{})))
         if channels:
-            channel=st.selectbox('Grain detection channel',channels,key=key+'_grain_channel')
+            channel=_remembered_input("data_sources:59:20", st.selectbox, 'Grain detection channel',channels,key=key+'_grain_channel')
             results=[r for r in results if state['layers'][r.layer_key].channel==channel]
         parts=[r.shape_table if name=='All grain means' else r.pixel_table for r in results]
         frame=pd.concat(parts,ignore_index=True,sort=False) if parts else pd.DataFrame()
@@ -67,5 +68,5 @@ def analysis_source_ui(state,key,label='Data source',tables=None):
     else:frame=tables[name]
     if {'sample_id','mineral_id','run_id'}.issubset(frame):
         frame=frame.copy()
-        frame['dataset_id']=frame[['sample_id','mineral_id','run_id']].fillna('(missing)').astype(str).agg(' | '.join,axis=1)
+        frame['dataset_id']=frame['sample_id'].fillna('(missing)').astype(str).str.cat([frame['mineral_id'].fillna('(missing)').astype(str), frame['run_id'].fillna('(missing)').astype(str)], sep=' | ')
     return name,filter_table_ui(frame,name,key)
