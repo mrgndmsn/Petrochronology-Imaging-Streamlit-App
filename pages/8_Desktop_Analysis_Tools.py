@@ -34,13 +34,9 @@ with tabs[0]:
     if not mineral_points:
         st.info("Import co-located mineral point tables first.")
     else:
-        samples = sorted({x.sample_id for x in mineral_points.values()})
-        selected = st.multiselect(
-            "Samples", samples, default=samples, key="mineral_summary_samples"
-        )
-        available_runs = sorted({x.run_id for x in mineral_points.values()})
-        selected_runs = st.multiselect("Runs",available_runs,default=available_runs)
-        mineral_points = {k:v for k,v in mineral_points.items() if v.sample_id in selected and v.run_id in selected_runs}
+        selected=sorted({x.sample_id for x in mineral_points.values()})
+        st.subheader("Mineral abundance / selected-channel fractions")
+        st.caption("Pixels counts measured points; it is not ppm. The concentration variation plot below is separate.")
         mode = st.selectbox("Fraction value", ["pixels", "sum", "mean"])
         all_channels = sorted(
             {c for x in mineral_points.values() for c in x.channels}
@@ -79,30 +75,36 @@ with tabs[0]:
                 "mineral_fractions.csv",
                 "text/csv",
             )
-        channels = st.multiselect(
-            "Element-variability channels",
-            all_channels,
-            default=all_channels[: min(6, len(all_channels))],
-        )
-        variability = mineral_variability_table(mineral_points, channels)
+        from core.desktop_tools import ordered_channels, element_fraction_table
+        st.subheader("Mean concentration and variation")
+        st.caption("Bars show arithmetic mean ppm for concentration channels. Error bars show ±1 sample standard deviation across finite pixel values, not uncertainty of the mean. Samples and runs are kept separate.")
+        channels = st.multiselect("Element-variability channels",all_channels,default=all_channels[:min(6,len(all_channels))])
+        order_text=st.text_area("Channel order (one selected column name per line)",help="Listed channels come first; remaining selected channels follow in selection order.")
+        try:
+            channels=ordered_channels(channels,order_text)
+        except ValueError as exc:
+            st.error(str(exc))
+        variability=mineral_variability_table(mineral_points,channels)
         if not variability.empty:
-            render_chart(
-                px.bar(
-                    variability,
-                    x="channel",
-                    y="mean",
-                    error_y="sd",
-                    color="mineral_id",
-                    barmode="group",
-                ),
-                width="stretch",
-            )
-            st.download_button(
-                "Download element variability",
-                variability.to_csv(index=False),
-                "mineral_element_variability.csv",
-                "text/csv",
-            )
+            figure=px.bar(variability,x="channel",y="mean",error_y="sd",color="mineral_id",barmode="group",
+                facet_col="sample_id",facet_row="run_id",category_orders={"channel":channels},
+                labels={"mean":"Mean concentration (ppm)","channel":"Element / column"},title="Mean concentration ±1 SD")
+            render_chart(figure,width="stretch")
+            st.dataframe(variability,width="stretch",hide_index=True)
+            st.download_button("Download element variability",variability.to_csv(index=False),"mineral_element_variability.csv","text/csv")
+            st.subheader("Element contributions by mineral")
+            fraction_stat=st.selectbox("Element fraction basis",["Mean ppm","Sum of pixel ppm"])
+            contributions=element_fraction_table(mineral_points,channels,'mean' if fraction_stat=='Mean ppm' else 'sum')
+            st.caption("Each element totals 100% across the included minerals in one sample/run. These are relative concentration contributions, not bulk mass fractions. Only positive contributions enter the denominator.")
+            render_chart(px.bar(contributions,x="channel",y="percent",color="mineral_id",barmode="stack",
+                facet_col="sample_id",facet_row="run_id",category_orders={"channel":channels},
+                labels={"percent":"Contribution (%)","channel":"Element / column"}),width="stretch")
+            if st.checkbox("Show one pie per selected element"):
+                pie_data=contributions.copy()
+                pie_data['Sample / run']=pie_data.sample_id+' / '+pie_data.run_id
+                render_chart(px.pie(pie_data,names='mineral_id',values='value',facet_col='channel',facet_row='Sample / run',
+                    category_orders={'channel':channels},title='Element contributions by mineral'),width='stretch')
+            st.download_button("Download ordered element fractions",contributions.to_csv(index=False),"element_fractions.csv","text/csv")
 
 with tabs[1]:
     candidates = {
@@ -111,8 +113,8 @@ with tabs[1]:
     if not candidates:
         st.info("Run a mineral boundary-buffer analysis first.")
     else:
-        name = st.selectbox("Boundary table", list(candidates))
-        frame = candidates[name]
+        from core.data_sources import analysis_source_ui
+        name,frame=analysis_source_ui(st.session_state,"boundary_summary","Boundary table",candidates)
         values = st.multiselect(
             "Channels",
             numeric_columns(frame, excluded=("inside_phase",)),
@@ -145,8 +147,8 @@ with tabs[2]:
     if not candidates:
         st.info("Create a line or radial profile first.")
     else:
-        name = st.selectbox("Profile table", list(candidates))
-        frame = filter_table_ui(candidates[name], name, "profile_summary")
+        from core.data_sources import analysis_source_ui
+        name,frame=analysis_source_ui(st.session_state,"profile_summary","Profile table",candidates)
         x = st.selectbox(
             "Distance",
             [
@@ -298,8 +300,8 @@ with tabs[3]:
     if not st.session_state.tables:
         st.info("Import a U–Pb analysis table first.")
     else:
-        name = st.selectbox("U–Pb table", list(st.session_state.tables))
-        frame = filter_table_ui(st.session_state.tables[name], name, "grouped_upb")
+        from core.data_sources import analysis_source_ui
+        name,frame=analysis_source_ui(st.session_state,"grouped_upb","U–Pb table")
         groups = st.multiselect(
             "Group means by",
             [
