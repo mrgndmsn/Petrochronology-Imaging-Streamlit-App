@@ -115,6 +115,17 @@ with st.expander("Import aligned matrix files"):
              "Cropping keeps the original spatial offset. Filenames are channel suggestions only.")
     files = st.file_uploader("Headerless matrix CSV files", type=["csv"], accept_multiple_files=True, key="matrix_files")
     st.caption("For large matrix stacks, upload small batches. Uploaded CSV files also consume server memory. For scaled matrices, collapse repeated coordinates to reduce the stored raster size.")
+    archive_upload = st.file_uploader("Matrix CSV ZIP (alternative to separate CSV uploads)", type=['zip'], key='matrix_archive')
+    archive_members = []
+    if archive_upload is not None:
+        try:
+            from core.matrix_archive import matrix_archive_members
+            archive_members = matrix_archive_members(archive_upload)
+        except Exception as exc:
+            st.error(f"Cannot read matrix ZIP: {exc}")
+    if archive_members:
+        if files:st.info('Using the ZIP instead of the separate chemistry uploads.')
+        files = archive_members
     cfg = assignment("matrix")
     cols = st.columns(2)
     ox = cols[0].number_input("Matrix X origin (µm)", value=0.0)
@@ -122,6 +133,15 @@ with st.expander("Import aligned matrix files"):
     crop = st.checkbox("Crop empty outer rows and columns", True)
     x_reference = st.file_uploader("X coordinate-reference matrix (optional)",type=["csv"],key="matrix_x_reference")
     y_reference = st.file_uploader("Y coordinate-reference matrix (optional)",type=["csv"],key="matrix_y_reference")
+    if archive_members:
+        choices = ['None'] + [f.name for f in archive_members]
+        archive_x = st.selectbox('X reference inside ZIP', choices)
+        archive_y = st.selectbox('Y reference inside ZIP', choices)
+        by_name = {f.name:f for f in archive_members}
+        if archive_x != 'None':x_reference = by_name[archive_x]
+        if archive_y != 'None':y_reference = by_name[archive_y]
+        files = [f for f in archive_members if f.name not in (archive_x,archive_y)]
+        st.caption('Select both coordinate CSVs above so they are excluded from chemistry channels. Enter sample, mineral, run and pixel sizes as usual. Only one member is decompressed at a time when duplicate-coordinate collapse is enabled.')
     st.caption("Coordinate references must match the raw channel shapes. Both are required together; their physical centers replace origin/axis coordinates, while the explicit X/Y sizes define pixel footprint.")
     collapse = st.checkbox("Collapse repeated X/Y coordinates (mean per pixel)", value=False)
     if x_reference is not None and y_reference is not None:
