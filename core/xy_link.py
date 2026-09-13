@@ -1,4 +1,5 @@
 """Resolve scatter selections by row identity, never by concentration equality."""
+from core.page_memory import remembered_input as _remembered_input
 import hashlib
 import numpy as np
 import pandas as pd
@@ -80,17 +81,21 @@ def linked_map_ui(selected,state):
     from .exports import render_chart
     from .selection_maps import map_overlay_figure
     from .mineral_colors import mineral_palette
+    if selected.empty and state.get('active_map_highlight') is not None:
+        selected=state['active_map_highlight']
     if selected.empty:
         st.caption('Use the lasso or box tool on the scatter plot to highlight corresponding map locations.');return
     spatial,unmapped=spatial_rows(selected,state)
     st.caption(f'{len(selected):,} selected observations; {len(spatial):,} unique spatial pixels; {unmapped:,} observations without resolvable spatial provenance.')
     if spatial.empty:return
+    activate_pixels(spatial,state,'xy')
+    st.caption('These pixels remain highlighted on matching maps when you change pages. Use Clear linked highlight on a map to remove them.')
     identities={tuple(str(row[c]) for c in IDS) for _,row in spatial[IDS].drop_duplicates().iterrows()}
     layers=[l for l in state.layers.values() if tuple(str(getattr(l,c)) for c in IDS) in identities]
     channel_choices=list(dict.fromkeys(l.channel for l in layers))
-    mode=st.selectbox('Linked map coloring',['Element','Mineral'],key='xy_link_map_mode')
+    mode=_remembered_input("xy_link:95:9", st.selectbox, 'Linked map coloring',['Element','Mineral'],key='xy_link_map_mode')
     if channel_choices:
-        channel=st.selectbox('Linked map element',channel_choices,key='xy_link_map_channel')
+        channel=_remembered_input("xy_link:97:16", st.selectbox, 'Linked map element',channel_choices,key='xy_link_map_channel')
         background=[l for l in layers if l.channel==channel]
         figure=map_overlay_figure(background,{}, {},{},'Mineral' if mode=='Mineral' else 'Concentration',mineral_palette(state))
     else:
@@ -106,7 +111,7 @@ def linked_map_ui(selected,state):
     figure.update_layout(xaxis_title='X (µm)',yaxis_title='Y (µm)')
     render_chart(figure,width='stretch',key='xy_linked_map')
     st.caption('Disconnected selected pixels remain disconnected. Overlay datasets only when their physical coordinates are registered.')
-    domain_name=st.text_input('Linked domain name','XY selection')
+    domain_name=_remembered_input("xy_link:113:16", st.text_input, 'Linked domain name','XY selection')
     if st.button('Save selected map pixels as domain'):
         if not domain_name.strip():st.error('Enter a domain name.');return
         name=domain_name.strip();base=name;i=2
@@ -116,3 +121,22 @@ def linked_map_ui(selected,state):
         state.tables['Selection | '+name]=spatial
         st.success(f'Saved {name}. It is available in map selections and analysis data sources.')
     st.download_button('Download linked pixels',spatial.to_csv(index=False),'xy_linked_pixels.csv','text/csv')
+
+
+def capture_plot_selection(frame,event,state,source='plot'):
+    if frame is None or frame.empty:return
+    frame=frame.reset_index(drop=True).copy()
+    frame[ROW_ID]=np.arange(len(frame))
+    selected=selected_rows(frame,event)
+    if selected.empty:return
+    pixels,_=spatial_rows(selected,state)
+    if not pixels.empty:activate_pixels(pixels,state,source)
+
+
+def activate_pixels(pixels,state,source):
+    pixels=pixels[IDS+['x','y']].copy()
+    signature=hashlib.sha256(pd.util.hash_pandas_object(pixels,index=False).values.tobytes()).hexdigest()
+    key='_linked_selection_signature::'+source
+    if state.get(key)!=signature:
+        state[key]=signature
+        state['active_map_highlight']=pixels
