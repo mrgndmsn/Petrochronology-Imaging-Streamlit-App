@@ -26,7 +26,7 @@ st.set_page_config(page_title="Grain editing", page_icon="✂️", layout="wide"
 initialize_state()
 st.title("Manual grain editing and radial profiles")
 if not st.session_state.grain_results:
-    st.info("Detect grains on the Map and Grains page first.")
+    st.info("Choose Detect grains above to create a grain set first.")
     st.stop()
 from core.ui_filters import channel_layers_ui
 from core.selection_maps import map_overlay_figure, filtered_saved_selections
@@ -104,8 +104,17 @@ if st.button("Undo last split or merge", disabled=not history):
     st.rerun()
 with tab_split:
     gid = st.selectbox("Grain ID", ids, key="split_gid")
+    draft_key = f"split_points::{key}::{gid}"
+    st.session_state.setdefault(draft_key, [])
+    split_figure = editing_map()
+    endpoints = st.session_state[draft_key]
+    if endpoints:
+        split_figure.add_scattergl(x=[p[0] for p in endpoints],y=[p[1] for p in endpoints],
+            mode='lines+markers',line=dict(color='red',width=3,dash='solid'),
+            marker=dict(color='red',size=10),name='Split line')
+    st.caption('Click two locations on the map to define the red split line, then Apply split. A third click starts a new line.')
     event = render_chart(
-        editing_map(),
+        split_figure,
         width="stretch",
         key=f"split_map::{key}",
         on_select="rerun",
@@ -114,6 +123,13 @@ with tab_split:
     draft_key = f"split_points::{key}::{gid}"
     st.session_state.setdefault(draft_key, [])
     clicked = clicked_xy(event)
+    event_id = getattr(event, 'event_id', None)
+    if clicked is not None and event_id is not None and st.session_state.get(draft_key+'_event') != event_id:
+        st.session_state[draft_key+'_event'] = event_id
+        if len(st.session_state[draft_key]) >= 2:st.session_state[draft_key] = []
+        st.session_state[draft_key].append(clicked)
+        st.session_state[draft_key+'_use'] = len(st.session_state[draft_key]) == 2
+        st.rerun()
     add, undo, clear = st.columns(3)
     if add.button("Add clicked endpoint", disabled=clicked is None):
         if len(st.session_state[draft_key]) >= 2:
@@ -137,9 +153,10 @@ with tab_split:
     c1 = c[2].number_input("End column", value=float(result.labels.shape[1] - 1))
     r1 = c[3].number_input("End row", value=float(result.labels.shape[0] - 1))
     width = c[4].number_input("Width (pixels)", 1.0, 20.0, 1.0)
+    st.session_state.setdefault(draft_key+'_use',len(st.session_state[draft_key]) == 2)
     use_clicked = st.checkbox(
         "Use clicked endpoints",
-        value=len(st.session_state[draft_key]) == 2,
+        key=draft_key+'_use',
         disabled=len(st.session_state[draft_key]) != 2,
     )
     split_all = st.checkbox("Split all grains crossed by the line")
@@ -180,6 +197,7 @@ with tab_center:
         selection_mode=("points",),
     )
     clicked = clicked_xy(center_event)
+    if clicked is not None:st.caption(f"Selected center: X={clicked[0]:.4g}, Y={clicked[1]:.4g} µm. Click Save moved center to apply.")
     c = st.columns(2)
     cx = c[0].number_input("Center X (µm)", value=float(row.centroid_x_um))
     cy = c[1].number_input("Center Y (µm)", value=float(row.centroid_y_um))
@@ -187,7 +205,7 @@ with tab_center:
     if st.button("Save moved center", type="primary"):
         chosen_center = clicked if clicked is not None else (cx, cy)
         st.session_state.manual_grain_centers[center_key] = list(chosen_center)
-        st.success("Center saved for radial profiles and overlays.")
+        st.rerun()
     if center_key in st.session_state.manual_grain_centers:
         st.write("Saved center:", st.session_state.manual_grain_centers[center_key])
         if st.button("Reset this center"):
@@ -205,6 +223,12 @@ with tab_radial:
         gid: st.session_state.manual_grain_centers.get(f"{key}::{gid}")
         for gid in chosen
     }
+    st.caption('Numbered spokes use the fitted ellipse and any saved moved center. Their count matches Profiles per grain; the buffer controls which pixels contribute to each profile.')
+    spoke_map = map_figure(layer, labels=result.labels,
+        grain_shapes=result.shape_table[result.shape_table.grain_id.isin(chosen)],
+        manual_centers={gid:center for gid,center in centers.items() if center is not None},
+        radial_spokes=int(spokes))
+    render_chart(spoke_map,width='stretch',key=f'radial_spoke_map::{key}')
     full_ellipse = st.checkbox("Include all pixels inside fitted ellipse", True)
     radial = ellipse_radial_table(
         layer, result, st.session_state.layers, chosen, int(bins), core, rim, centers, use_full_ellipse=full_ellipse
