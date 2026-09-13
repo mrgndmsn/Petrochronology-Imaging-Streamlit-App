@@ -16,11 +16,11 @@ st.set_page_config(page_title='Population concordia and discordia',layout='wide'
 initialize_state()
 st.title('Population concordia and discordia fits')
 st.caption('Uses the numerical routines from the uploaded Tkinter reference. Wetherill X = 207Pb/235U, Y = 206Pb/238U.')
-if not st.session_state.tables:
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info('Import an analysis table first.')
     st.stop()
-name = st.selectbox('Data source',list(st.session_state.tables))
-frame = filter_table_ui(st.session_state.tables[name],name,'population')
+from core.data_sources import analysis_source_ui
+name,frame=analysis_source_ui(st.session_state,"population")
 nums = numeric_columns(frame)
 if frame.empty or len(nums)<4:
     st.info('At least four numeric columns and populated rows are required.')
@@ -96,6 +96,7 @@ if st.button('Calculate reference fits',type='primary'):
     fig.update_layout(template='plotly_white',xaxis_title='207Pb/235U' if plot_type=='Wetherill' else '238U/206Pb',
                       yaxis_title='206Pb/238U' if plot_type=='Wetherill' else '207Pb/206Pb')
     result_frame=pd.DataFrame(rows)
+    fig.update_layout(legend_title=None if group=='All selected rows' else group)
     render_chart(fig,width='stretch')
     st.dataframe(result_frame,width='stretch')
     st.download_button('Download reference fit results',result_frame.to_csv(index=False),'reference_upb_fits.csv','text/csv')
