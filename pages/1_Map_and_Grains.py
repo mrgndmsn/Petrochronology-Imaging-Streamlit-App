@@ -15,16 +15,18 @@ from core.state import initialize_state, layer_options
 st.set_page_config(page_title = "Map and grains", page_icon = "🗺️", layout = "wide")
 initialize_state()
 st.title("Map and grain analysis")
-options = layer_options()
-if not options:
-    st.info("Import a map layer on the Home page first.")
+from core.selection_maps import map_overlay_figure, filtered_saved_selections, selection_context
+from core.mineral_colors import mineral_palette
+from core.ui_filters import channel_layers_ui
+visible=channel_layers_ui(st.session_state,'map')
+channel=visible[0].channel
+layer=visible[0]
+finite=np.concatenate([l.values[np.isfinite(l.values)] for l in visible])
+if not finite.size:
+    st.info('The visible maps contain no finite values.')
     st.stop()
-label = st.selectbox("Map layer", options)
-layer = st.session_state.layers[options[label]]
-finite = layer.values[np.isfinite(layer.values)]
-if finite.size == 0:
-    st.error("This layer contains no finite values.")
-    st.stop()
+map_color=st.selectbox('Map color',['Concentration','Mineral'])
+st.caption(f'{len(visible)} datasets overlaid for {channel}. Filters control the visible maps and grain detection. Grain identities remain separate for each sample/mineral/run. Only overlay samples with comparable physical coordinates.')
 
 controls, display = st.columns([1, 3])
 with controls:
@@ -74,66 +76,26 @@ with controls:
     exclude_edges = st.checkbox("Exclude grains touching map edge")
     run = st.button("Detect grains", type = "primary", width = "stretch")
 
-grain_result = st.session_state.grain_results.get(layer.key)
 if run:
-    settings = GrainSettings(
-        rules[rule_label],
-        threshold,
-        int(minimum),
-        int(connectivity),
-        fill_holes,
-        remove_speckles,
-        int(bridge),
-        exclude_edges,
-    )
-    with st.spinner("Detecting and measuring grains..."):
-        grain_result = detect_grains(layer, settings)
-    st.session_state.grain_results[layer.key] = grain_result
-    table_name = (
-        f"Grain means | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-    )
-    grain_result.shape_table = grain_summary_all_channels(
-        layer, grain_result, st.session_state.layers
-    )
-    st.session_state.tables[table_name] = grain_result.shape_table
-    pixel_name = (
-        f"Grain pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-    )
-    grain_result.pixel_table = grain_pixels_all_channels(
-        layer, grain_result, st.session_state.layers
-    )
-    st.session_state.tables[pixel_name] = grain_result.pixel_table
-    st.session_state.active_table_name = table_name
+    settings=GrainSettings(rules[rule_label],threshold,int(minimum),int(connectivity),fill_holes,remove_speckles,int(bridge),exclude_edges)
+    with st.spinner('Detecting grains separately in each visible dataset...'):
+        for current in visible:
+            result=detect_grains(current,settings)
+            result.shape_table=grain_summary_all_channels(current,result,st.session_state.layers)
+            result.pixel_table=grain_pixels_all_channels(current,result,st.session_state.layers)
+            st.session_state.grain_results[current.key]=result
+            table_name=f'Grain means | {current.key}'
+            st.session_state.tables[table_name]=result.shape_table
+            st.session_state.tables[f'Grain pixels | {current.key}']=result.pixel_table
+            st.session_state.active_table_name=table_name
 
 with display:
-    selection_overlays = {
-        k.split("::")[-1]: v
-        for k, v in st.session_state.selections.items()
-        if k.startswith(layer.key + "::")
-    }
-    centers = {}
-    for center_key, center in st.session_state.manual_grain_centers.items():
-        if center_key.startswith(layer.key + "::"):
-            centers[center_key.split("::")[-1]] = center
-    map_plot = map_figure(
-        layer,
-        grain_result.labels if grain_result else None,
-        invert_x,
-        invert_y,
-        vmin,
-        vmax,
-        selection_overlays,
-        grain_result.shape_table if grain_result else None,
-        centers,
-        show_spokes,
-        colorscale = colorscale,
-        scale_bar_um = scale_bar,
-        show_colorbar = show_colorbar,
-        scale_bar_color = scale_color,
-        scale_bar_width = scale_width,
-        scale_bar_position = scale_position,
-        log_color = log_color,
-    )
+    selection_overlays=filtered_saved_selections(st.session_state.selections,visible)
+    map_plot=map_overlay_figure(visible,st.session_state.grain_results,st.session_state.manual_grain_centers,
+        selection_overlays,map_color,mineral_palette(st.session_state),invert_x=invert_x,invert_y=invert_y,
+        vmin=vmin,vmax=vmax,radial_spokes=show_spokes,colorscale=colorscale,scale_bar_um=scale_bar,
+        show_colorbar=show_colorbar,scale_bar_color=scale_color,scale_bar_width=scale_width,
+        scale_bar_position=scale_position,log_color=log_color)
     render_chart(map_plot, width="stretch")
     st.download_button(
         "Save interactive map",
@@ -141,12 +103,23 @@ with display:
         f"{safe_filename(layer.key)}_map.html",
         "text/html",
     )
-    st.download_button(
-        "Export displayed matrix",
-        pd.DataFrame(layer.values, index = layer.y, columns = layer.x).to_csv(),
-        f"{safe_filename(layer.key)}_matrix.csv",
-        "text/csv",
-    )
+    export_layer=layer
+    if len(visible)>1:
+        export_key=st.selectbox('Dataset to export as matrix',[l.key for l in visible],
+            format_func=lambda key:' | '.join(key.split('::')[:3]))
+        export_layer=st.session_state.layers[export_key]
+    st.download_button('Export displayed matrix',pd.DataFrame(export_layer.values,index=export_layer.y,columns=export_layer.x).to_csv(),
+        f'{safe_filename(export_layer.key)}_matrix.csv','text/csv')
+
+available_results=[(l,st.session_state.grain_results[l.key]) for l in visible if l.key in st.session_state.grain_results]
+grain_result=None
+if available_results:
+    layer,grain_result=available_results[0]
+    if len(available_results)>1:
+        chosen_result=st.selectbox('Grain results dataset',[l.key for l,r in available_results],
+            format_func=lambda key:' | '.join(key.split('::')[:3]))
+        layer=st.session_state.layers[chosen_result]
+        grain_result=st.session_state.grain_results[chosen_result]
 
 if grain_result is not None:
     st.subheader(f"Detected grains: {len(grain_result.shape_table):,}")
