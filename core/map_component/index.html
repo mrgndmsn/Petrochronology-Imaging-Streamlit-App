@@ -38,6 +38,16 @@ async function render(a){
  }
  busy=false;send('streamlit:setFrameHeight',{height:710});
 }
+// Tabs can initialize an iframe at zero width. Recompute layout when it
+// becomes visible so legends, text measurements, and axes use its real size.
+let observedWidth=0;
+new ResizeObserver(()=>{
+ const width=plot.getBoundingClientRect().width;
+ if(width>0 && width!==observedWidth){
+  observedWidth=width;
+  if(attached) requestAnimationFrame(()=>Plotly.Plots.resize(plot));
+ }
+}).observe(document.documentElement);
 let queue=Promise.resolve();window.addEventListener('message',e=>{if(e.source===parent && e.data.type==='streamlit:render')queue=queue.then(()=>render(e.data.args)).catch(err=>{plot.textContent='Map rendering failed: '+err;busy=false;});});
 send('streamlit:componentReady',{apiVersion:1});send('streamlit:setFrameHeight',{height:710});
 </script></body></html>
