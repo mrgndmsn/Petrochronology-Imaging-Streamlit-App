@@ -1,5 +1,6 @@
 from __future__ import annotations
 import streamlit as st
+import numpy as np
 from .provenance import apply_filters
 
 
@@ -57,9 +58,29 @@ def channel_layers_ui(state,key,grain_results_only=False):
     if not layers:
         st.info('No matching raster maps are available.')
         st.stop()
-    channel=st.selectbox('Channel',list(dict.fromkeys(l.channel for l in layers)),key=key+'_channel')
+    channels=list(dict.fromkeys(l.channel for l in layers))
+    populated={l.channel for l in layers if np.isfinite(l.values).any()}
+    first=next((i for i,c in enumerate(channels) if c in populated),0)
+    channel=st.selectbox('Channel',channels,index=first,key=key+'_channel',format_func=lambda c:c if c in populated else c+' (no finite values)')
     visible=filter_layers_ui([l for l in layers if l.channel==channel],key)
     if not visible:
         st.info('No maps match these filters.')
         st.stop()
+    count=sum(int(np.isfinite(l.values).sum()) for l in visible)
+    st.caption(f'{channel}: {count:,} finite pixels in the selected datasets.')
+    if not count:
+        identities={(l.sample_id,l.mineral_id,l.run_id) for l in visible}
+        alternatives=list(dict.fromkeys(l.channel for l in layers if (l.sample_id,l.mineral_id,l.run_id) in identities and np.isfinite(l.values).any()))
+        st.warning(f'{channel} contains no finite numeric values for these datasets. '+
+                   ('Choose a populated channel: '+', '.join(alternatives) if alternatives else 'Check the source files and any pixel exclusions.'))
+        st.stop()
     return visible
+
+
+def persistent_selectbox(label, options, key, container=None, index=0):
+    target=container or st
+    previous=st.session_state.get(key+'_remembered')
+    if previous in options:index=options.index(previous)
+    selected=target.selectbox(label,options,index=index,key=key)
+    st.session_state[key+'_remembered']=selected
+    return selected
