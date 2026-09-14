@@ -11,7 +11,7 @@ from core.state import initialize_state
 
 st.set_page_config(page_title="Mineral overlay", page_icon="💎", layout="wide")
 initialize_state()
-mineral_points = mineral_layers_ui(st.session_state, "overlay")
+mineral_points = mineral_layers_ui(st.session_state, "overlay", coordinates_only=True)
 st.title("Co-located mineral overlay")
 if not mineral_points:
     st.info("Import mineral point tables or raster maps on the Home page first.")
