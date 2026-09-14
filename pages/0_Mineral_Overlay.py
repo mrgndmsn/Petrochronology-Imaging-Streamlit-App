@@ -79,6 +79,12 @@ figure.update_layout(
     meta={"map_layer_key":"overlay::"+"|".join(sorted(mineral_points)), "dataset_identities":[[l.sample_id,l.mineral_id,l.run_id] for l in layers]},
 )
 figure.update_yaxes(scaleanchor="x")
+from core.domain_maps import domain_controls, draw_domains
+saved_domains=domain_controls(st.session_state,layers,'mineral_saved')
+if saved_domains:
+    domain_style=st.selectbox('Domain display style',['Filled pixels','Circles'])
+    domain_opacity=st.slider('Domain opacity',.1,1.,.8)
+    draw_domains(figure,saved_domains,st.session_state,domain_style,domain_opacity)
 render_chart(figure, width="stretch")
 if summary:
     st.dataframe(summary, width="stretch", hide_index=True)
