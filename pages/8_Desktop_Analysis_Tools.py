@@ -37,44 +37,50 @@ with tabs[0]:
         selected=sorted({x.sample_id for x in mineral_points.values()})
         st.subheader("Mineral abundance / selected-channel fractions")
         st.caption("Pixels counts measured points; it is not ppm. The concentration variation plot below is separate.")
-        mode = st.selectbox("Fraction value", ["pixels", "sum", "mean"])
-        all_channels = sorted(
-            {c for x in mineral_points.values() for c in x.channels}
-        )
-        value = (
-            st.selectbox("Channel", all_channels, disabled=mode == "pixels")
-            if all_channels
-            else None
-        )
-        fractions = mineral_fraction_table(
-            mineral_points, selected, mode, value
-        )
-        if not fractions.empty:
-            pie = px.pie(
-                fractions,
-                names="mineral_id",
-                values="value",
-                facet_col="sample_id",
-                facet_row="run_id",
-                title="Mineral fractions",
+        all_channels=sorted({c for layer in mineral_points.values() for c in layer.channels})
+        categories=st.radio('Fraction categories',['Minerals','Saved domains'],horizontal=True)
+        if categories=='Saved domains':
+            from core.domain_fractions import domain_fraction_ui
+            domain_fraction_ui(mineral_points,st.session_state)
+        else:
+            mode = st.selectbox("Fraction value", ["pixels", "sum", "mean"])
+            all_channels = sorted(
+                {c for x in mineral_points.values() for c in x.channels}
             )
-            render_chart(pie, width="stretch")
-            stack = px.bar(
-                fractions,
-                x="sample_id",
-                y="percent",
-                color="mineral_id",
-                barmode="stack",
-                facet_col="run_id",
-                title="Stacked mineral fractions",
+            value = (
+                st.selectbox("Channel", all_channels, disabled=mode == "pixels")
+                if all_channels
+                else None
             )
-            render_chart(stack, width="stretch")
-            st.download_button(
-                "Download mineral fractions",
-                fractions.to_csv(index=False),
-                "mineral_fractions.csv",
-                "text/csv",
+            fractions = mineral_fraction_table(
+                mineral_points, selected, mode, value
             )
+            if not fractions.empty:
+                pie = px.pie(
+                    fractions,
+                    names="mineral_id",
+                    values="value",
+                    facet_col="sample_id",
+                    facet_row="run_id",
+                    title="Mineral fractions",
+                )
+                render_chart(pie, width="stretch")
+                stack = px.bar(
+                    fractions,
+                    x="sample_id",
+                    y="percent",
+                    color="mineral_id",
+                    barmode="stack",
+                    facet_col="run_id",
+                    title="Stacked mineral fractions",
+                )
+                render_chart(stack, width="stretch")
+                st.download_button(
+                    "Download mineral fractions",
+                    fractions.to_csv(index=False),
+                    "mineral_fractions.csv",
+                    "text/csv",
+                )
         from core.desktop_tools import ordered_channels, element_fraction_table
         st.subheader("Mean concentration and variation")
         st.caption("Bars show arithmetic mean ppm for concentration channels. Error bars show ±1 sample standard deviation across finite pixel values, not uncertainty of the mean. Samples and runs are kept separate.")
