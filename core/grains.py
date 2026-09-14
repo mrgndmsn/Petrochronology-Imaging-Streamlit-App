@@ -7,7 +7,7 @@ from .models import GrainResult, MapLayer
 from .ellipse import _feret_ellipse_long_axis_ellipse_from_points
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class GrainSettings:
     rule: str = "greater_than"
     threshold: float = 0.0
@@ -17,9 +17,6 @@ class GrainSettings:
     remove_speckles: bool = True
     bridge_pixels: int = 0
     exclude_edge_grains: bool = False
-
-
-
 
 
 def make_mask(values: np.ndarray, settings: GrainSettings) -> np.ndarray:
@@ -42,7 +39,6 @@ def make_mask(values: np.ndarray, settings: GrainSettings) -> np.ndarray:
             mask, structure=structure, iterations=settings.bridge_pixels
         )
     return np.asarray(mask, dtype=bool)
-
 
 
 def detect_grains(layer: MapLayer, settings: GrainSettings) -> GrainResult:
@@ -95,16 +91,24 @@ def measure_grains(
         center_y = float(np.mean(yv))
 
         grain_mask = labels == grain_id
-        eroded = ndimage.binary_erosion(grain_mask, structure=ndimage.generate_binary_structure(2, 1))
+        eroded = ndimage.binary_erosion(
+            grain_mask, structure=ndimage.generate_binary_structure(2, 1)
+        )
         boundary = grain_mask & ~eroded
         br, bc = np.where(boundary)
-        fit_x, fit_y, length, width, angle = _feret_ellipse_long_axis_ellipse_from_points(
-            *layer.coordinates_at(br, bc), padding=1.04)
-        if not np.isfinite([fit_x, fit_y, length, width, angle]).all() or min(length, width) <= 0:
+        fit_x, fit_y, length, width, angle = (
+            _feret_ellipse_long_axis_ellipse_from_points(
+                *layer.coordinates_at(br, bc), padding=1.04
+            )
+        )
+        if (
+            not np.isfinite([fit_x, fit_y, length, width, angle]).all()
+            or min(length, width) <= 0
+        ):
             fit_x, fit_y = center_x, center_y
             bx = float(np.ptp(xv) + dx)
             by = float(np.ptp(yv) + dy)
-            length, width, angle = max(bx, by), min(bx, by), 0. if bx >= by else 90.
+            length, width, angle = max(bx, by), min(bx, by), 0.0 if bx >= by else 90.0
         # Pixel-edge perimeter, exact for a rectilinear grid.
         perimeter = 0.0
         occupied = set(zip(rows.tolist(), cols.tolist()))
@@ -156,30 +160,50 @@ def measure_grains(
             }
         )
         if n >= 2:
-            covariance = np.cov(np.column_stack((xv-center_x,yv-center_y)),rowvar=False)
-            eigenvalues,eigenvectors = np.linalg.eigh(covariance)
-            order=np.argsort(eigenvalues)[::-1]
-            eigenvalues,eigenvectors=eigenvalues[order],eigenvectors[:,order]
-            moment_major,moment_minor=4*np.sqrt(np.maximum(eigenvalues,0))
-            moment_angle=float(np.degrees(np.arctan2(eigenvectors[1,0],eigenvectors[0,0])))
+            covariance = np.cov(
+                np.column_stack((xv - center_x, yv - center_y)), rowvar=False
+            )
+            eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+            order = np.argsort(eigenvalues)[::-1]
+            eigenvalues, eigenvectors = eigenvalues[order], eigenvectors[:, order]
+            moment_major, moment_minor = 4 * np.sqrt(np.maximum(eigenvalues, 0))
+            moment_angle = float(
+                np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
+            )
         else:
             moment_major = moment_minor = moment_angle = np.nan
-        pcx,pcy,pmajor,pminor,pangle = _feret_ellipse_long_axis_ellipse_from_points(xv,yv,padding = 1.04)
-        record=shape_rows[-1]
+        pcx, pcy, pmajor, pminor, pangle = _feret_ellipse_long_axis_ellipse_from_points(
+            xv, yv, padding=1.04
+        )
+        record = shape_rows[-1]
         record.update(
-            grain_area_pixels = n, grain_area_coordinate_units2 = area,
-            grain_width_x_units = float(np.ptp(xv)+dx), grain_height_y_units = float(np.ptp(yv)+dy),
-            ellipse_major_axis = float(moment_major), ellipse_minor_axis = float(moment_minor),
-            ellipse_moment_orientation_deg = moment_angle,
-            ellipse_projected_center_x = pcx, ellipse_projected_center_y = pcy,
-            ellipse_projected_major_axis = pmajor, ellipse_projected_minor_axis = pminor,
-            ellipse_projected_orientation_deg = pangle,
-            ellipse_boundary_center_x = fit_x, ellipse_boundary_center_y = fit_y,
-            ellipse_boundary_major_axis = length, ellipse_boundary_minor_axis = width,
-            ellipse_boundary_orientation_deg = angle,
-            grain_perimeter = perimeter, grain_length=length, grain_width = width,
-            element_n = int(finite_values.size), element_mean = record['value_mean'], element_sd = record['value_sd'],
-            element_cv = record['value_sd']/record['value_mean'] if record['value_mean'] else np.nan)
+            grain_area_pixels=n,
+            grain_area_coordinate_units2=area,
+            grain_width_x_units=float(np.ptp(xv) + dx),
+            grain_height_y_units=float(np.ptp(yv) + dy),
+            ellipse_major_axis=float(moment_major),
+            ellipse_minor_axis=float(moment_minor),
+            ellipse_moment_orientation_deg=moment_angle,
+            ellipse_projected_center_x=pcx,
+            ellipse_projected_center_y=pcy,
+            ellipse_projected_major_axis=pmajor,
+            ellipse_projected_minor_axis=pminor,
+            ellipse_projected_orientation_deg=pangle,
+            ellipse_boundary_center_x=fit_x,
+            ellipse_boundary_center_y=fit_y,
+            ellipse_boundary_major_axis=length,
+            ellipse_boundary_minor_axis=width,
+            ellipse_boundary_orientation_deg=angle,
+            grain_perimeter=perimeter,
+            grain_length=length,
+            grain_width=width,
+            element_n=int(finite_values.size),
+            element_mean=record["value_mean"],
+            element_sd=record["value_sd"],
+            element_cv=record["value_sd"] / record["value_mean"]
+            if record["value_mean"]
+            else np.nan,
+        )
         pixel_parts.append(
             pd.DataFrame(
                 {
@@ -199,25 +223,5 @@ def measure_grains(
         )
 
     return pd.DataFrame(shape_rows), (
-        pd.concat(pixel_parts, ignore_index = True) if pixel_parts else pd.DataFrame()
+        pd.concat(pixel_parts, ignore_index=True) if pixel_parts else pd.DataFrame()
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
