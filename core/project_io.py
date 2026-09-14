@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from copy import deepcopy
 from io import BytesIO
 import json
@@ -14,8 +13,17 @@ from .models import GrainResult, MapLayer, PointLayer
 FORMAT_VERSION = 2
 
 
-def save_project(layers, tables, grain_results, selections=None, centers=None,
-                 point_layers=None, definitions=None, mineral_colors=None):
+def save_project(
+    layers,
+    tables,
+    grain_results,
+    selections=None,
+    centers=None,
+    point_layers=None,
+    definitions=None,
+    mineral_colors=None,
+    tab_settings=None,
+):
     # Snapshot to private temporary files before serialization. Avoid duplicating
     # all arrays/dataframes in RAM while retaining isolation from later mutations.
     import tempfile
@@ -27,46 +35,73 @@ def save_project(layers, tables, grain_results, selections=None, centers=None,
             self.entries = []
             for index, (key, value) in enumerate(list(mapping.items())):
                 path = directory / f"{prefix}_{index}.pickle"
-                with path.open('wb') as handle:
+                with path.open("wb") as handle:
                     pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 self.entries.append((key, path))
 
         def items(self):
             for key, path in self.entries:
-                with path.open('rb') as handle:
+                with path.open("rb") as handle:
                     value = pickle.load(handle)
                 yield key, value
 
-    with tempfile.TemporaryDirectory(prefix='geochemical-save-') as temp:
+    with tempfile.TemporaryDirectory(prefix="geochemical-save-") as temp:
         directory = Path(temp)
-        snapshots = [DiskSnapshot(mapping, directory, str(i)) for i, mapping in enumerate(
-            (layers, tables, grain_results, selections or {}, point_layers or {}))]
-        return _save_project(snapshots[0], snapshots[1], snapshots[2], snapshots[3],
-                             deepcopy(centers or {}), snapshots[4],
-                             deepcopy(definitions or []), deepcopy(mineral_colors or {}))
+        snapshots = [
+            DiskSnapshot(mapping, directory, str(i))
+            for i, mapping in enumerate(
+                (layers, tables, grain_results, selections or {}, point_layers or {})
+            )
+        ]
+        return _save_project(
+            snapshots[0],
+            snapshots[1],
+            snapshots[2],
+            snapshots[3],
+            deepcopy(centers or {}),
+            snapshots[4],
+            deepcopy(definitions or []),
+            deepcopy(mineral_colors or {}),
+            deepcopy(tab_settings or {}),
+        )
 
 
 def _write_table(archive, path, frame):
     # Preserve pandas table schema, but encode bounded row batches instead of
     # building one huge JSON string and then another UTF-8 byte copy.
-    schema = json.loads(frame.iloc[:0].to_json(orient="table", index=False, double_precision=15))["schema"]
-    with archive.open(path, 'w', force_zip64=True) as handle:
+    schema = json.loads(
+        frame.iloc[:0].to_json(orient="table", index=False, double_precision=15)
+    )["schema"]
+    with archive.open(path, "w", force_zip64=True) as handle:
         handle.write(('{"schema":' + json.dumps(schema) + ',"data":[').encode())
         first = True
         for offset in range(0, len(frame), 1000):
-            chunk = frame.iloc[offset:offset+1000].to_json(orient='records', date_format='iso', double_precision=15)[1:-1]
-            if not chunk:continue
-            if not first:handle.write(b',')
-            handle.write(chunk.encode('utf-8'))
+            chunk = frame.iloc[offset : offset + 1000].to_json(
+                orient="records", date_format="iso", double_precision=15
+            )[1:-1]
+            if not chunk:
+                continue
+            if not first:
+                handle.write(b",")
+            handle.write(chunk.encode("utf-8"))
             first = False
-        handle.write(b']}')
+        handle.write(b"]}")
 
 
 def _save_project(
-    layers, tables, grain_results, selections=None, centers=None, point_layers=None, definitions=None, mineral_colors=None
+    layers,
+    tables,
+    grain_results,
+    selections=None,
+    centers=None,
+    point_layers=None,
+    definitions=None,
+    mineral_colors=None,
+    tab_settings=None,
 ):
     output = BytesIO()
     manifest = {
+        "tab_settings": _json_safe(tab_settings or {}),
         "mineral_colors": _json_safe((mineral_colors or {}).copy()),
         "format": "geochemical-map-streamlit",
         "version": FORMAT_VERSION,
@@ -82,8 +117,14 @@ def _save_project(
         for index, (key, layer) in enumerate(layers.items()):
             path = f"layers/layer_{index}.npz"
             arrays = BytesIO()
-            extra = {k:np.asarray(layer.metadata[k],float) for k in ('x_grid','y_grid') if k in layer.metadata}
-            np.savez_compressed(arrays, values=layer.values, x=layer.x, y=layer.y, **extra)
+            extra = {
+                k: np.asarray(layer.metadata[k], float)
+                for k in ("x_grid", "y_grid")
+                if k in layer.metadata
+            }
+            np.savez_compressed(
+                arrays, values=layer.values, x=layer.x, y=layer.y, **extra
+            )
             archive.writestr(path, arrays.getvalue())
             manifest["layers"].append(
                 {
@@ -93,13 +134,21 @@ def _save_project(
                     "mineral_id": layer.mineral_id,
                     "run_id": layer.run_id,
                     "channel": layer.channel,
-                    "metadata": _json_safe({k:v for k,v in layer.metadata.items() if k not in ("x_grid","y_grid")}),
+                    "metadata": _json_safe(
+                        {
+                            k: v
+                            for k, v in layer.metadata.items()
+                            if k not in ("x_grid", "y_grid")
+                        }
+                    ),
                 }
             )
         for index, (name, frame) in enumerate(tables.items()):
             path = f"tables/table_{index}.json"
             _write_table(archive, path, frame)
-            manifest["tables"].append({"name": name, "path": path, "attrs": _json_safe(frame.attrs)})
+            manifest["tables"].append(
+                {"name": name, "path": path, "attrs": _json_safe(frame.attrs)}
+            )
         for index, (key, result) in enumerate(grain_results.items()):
             label_path = f"grains/labels_{index}.npy"
             buffer = BytesIO()
@@ -122,7 +171,9 @@ def _save_project(
         for index, (key, frame) in enumerate((selections or {}).items()):
             path = f"selections/selection_{index}.json"
             _write_table(archive, path, frame)
-            manifest["selections"].append({"key": key, "path": path, "attrs": _json_safe(frame.attrs)})
+            manifest["selections"].append(
+                {"key": key, "path": path, "attrs": _json_safe(frame.attrs)}
+            )
         for index, (key, layer) in enumerate((point_layers or {}).items()):
             path = f"point_layers/points_{index}.json"
             _write_table(archive, path, layer.frame)
@@ -148,10 +199,9 @@ def load_project(data):
         if "manifest.json" not in names:
             raise ValueError("This is not a geochemical map project.")
         manifest = json.loads(archive.read("manifest.json"))
-        if (
-            manifest.get("format") != "geochemical-map-streamlit"
-            or manifest.get("version") not in (1, FORMAT_VERSION)
-        ):
+        if manifest.get("format") != "geochemical-map-streamlit" or manifest.get(
+            "version"
+        ) not in (1, FORMAT_VERSION):
             raise ValueError("Unsupported project format or version.")
         layers = {}
         for item in manifest["layers"]:
@@ -166,7 +216,10 @@ def load_project(data):
                     arrays["values"],
                     arrays["x"],
                     arrays["y"],
-                    {**item.get("metadata", {}), **{k:arrays[k] for k in ("x_grid","y_grid") if k in arrays}},
+                    {
+                        **item.get("metadata", {}),
+                        **{k: arrays[k] for k in ("x_grid", "y_grid") if k in arrays},
+                    },
                 )
             layers[item["key"]] = layer
         tables = {
@@ -189,8 +242,8 @@ def load_project(data):
             item["key"]: _read_frame(archive, item["path"])
             for item in manifest.get("selections", [])
         }
-        for item in manifest.get('selections',[]):
-            selections[item['key']].attrs.update(item.get('attrs',{}))
+        for item in manifest.get("selections", []):
+            selections[item["key"]].attrs.update(item.get("attrs", {}))
         point_layers = {
             item["key"]: PointLayer(
                 item["sample_id"],
@@ -204,8 +257,9 @@ def load_project(data):
             for item in manifest.get("point_layers", [])
         }
         return {
+            "_restored_tab_settings": manifest.get("tab_settings", {}),
             "calculation_definitions": manifest.get("calculation_definitions", []),
-        "mineral_colors": manifest.get("mineral_colors", {}),
+            "mineral_colors": manifest.get("mineral_colors", {}),
             "layers": layers,
             "point_layers": point_layers,
             "tables": tables,
@@ -230,8 +284,8 @@ def _json_safe(value):
 
 
 def _read_frame(archive, path):
-    if path.endswith('.json'):
-        return pd.read_json(BytesIO(archive.read(path)), orient='table')
+    if path.endswith(".json"):
+        return pd.read_json(BytesIO(archive.read(path)), orient="table")
     try:
         return pd.read_csv(BytesIO(archive.read(path)))
     except pd.errors.EmptyDataError:
