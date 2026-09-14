@@ -148,6 +148,8 @@ with st.expander("Import aligned matrix files"):
         st.info("The X/Y reference files set the positions; both origin fields are ignored. Upload chemistry matrices above, and X/Y matrices only in their reference slots.")
     if collapse:
         st.caption("Exact duplicate coordinate pairs become one pixel using the finite mean for each channel. Enter the original measurement pixel sizes. Empty coordinate-free padding is removed; remaining coordinates must align to those sizes. This also works with one-to-one coordinates.")
+    from core.channel_rename import bulk_channel_names
+    bulk_channel_names(files)
     channels = {}
     for f in files or []:
         channels[f.name] = st.text_input(f"Channel for {f.name}", matrix_channel_name(f.name), key=f"matrix_channel_{f.name}")
