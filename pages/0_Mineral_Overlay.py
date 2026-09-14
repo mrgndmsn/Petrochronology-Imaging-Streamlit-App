@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pandas as pd
 
 import numpy as np
 import plotly.graph_objects as go
@@ -15,15 +16,20 @@ st.title("Co-located mineral overlay")
 if not mineral_points:
     st.info("Import mineral point tables or raster maps on the Home page first.")
     st.stop()
-layers=list(mineral_points.values())
-selected={l.mineral_id for l in layers}
+layers = list(mineral_points.values())
+selected = {l.mineral_id for l in layers}
 from core.mineral_colors import mineral_palette
-palette=mineral_palette(st.session_state)
+
+palette = mineral_palette(st.session_state)
 with st.container():
     st.subheader("Mineral colors — shared across plots")
-    st.caption("Choose each mineral color here; other plots use it when grouped by mineral ID.")
+    st.caption(
+        "Choose each mineral color here; other plots use it when grouped by mineral ID."
+    )
     for mineral in sorted(palette):
-        palette[mineral]=st.color_picker(mineral,palette[mineral],key=f'mineral_color::{mineral}')
+        palette[mineral] = st.color_picker(
+            mineral, palette[mineral], key=f"mineral_color::{mineral}"
+        )
 size = st.slider("Marker size", 1, 12, 3)
 opacity = st.slider("Opacity", 0.05, 1.0, 0.7)
 figure = go.Figure()
@@ -36,10 +42,10 @@ for index, layer in enumerate(layers):
     # A row represents the mineral where at least one chemical channel is finite.
     present = np.zeros(len(frame), bool)
     for column in value_columns:
-        present |= np.isfinite(
-            __import__("pandas").to_numeric(frame[column], errors="coerce").to_numpy()
-        )
-    present &= np.isfinite(__import__('pandas').to_numeric(frame[layer.x_column],errors='coerce')) & np.isfinite(__import__('pandas').to_numeric(frame[layer.y_column],errors='coerce'))
+        present |= np.isfinite(pd.to_numeric(frame[column], errors="coerce").to_numpy())
+    present &= np.isfinite(
+        pd.to_numeric(frame[layer.x_column], errors="coerce")
+    ) & np.isfinite(pd.to_numeric(frame[layer.y_column], errors="coerce"))
     shown = frame.loc[present]
     figure.add_trace(
         go.Scattergl(
@@ -65,10 +71,14 @@ for index, layer in enumerate(layers):
             "y_max": shown[layer.y_column].max(),
         }
     )
-total_pixels=sum(row['pixels'] for row in summary)
-st.caption(f'{len(layers)} datasets selected; {total_pixels:,} pixels with finite chemistry and coordinates.')
+total_pixels = sum(row["pixels"] for row in summary)
+st.caption(
+    f"{len(layers)} datasets selected; {total_pixels:,} pixels with finite chemistry and coordinates."
+)
 if not total_pixels:
-    st.warning('The selected presence channels or filters retain no pixels. Check Raster presence settings and the sample/mineral/run filters.')
+    st.warning(
+        "The selected presence channels or filters retain no pixels. Check Raster presence settings and the sample/mineral/run filters."
+    )
     st.stop()
 figure.update_layout(
     template="plotly_white",
@@ -76,15 +86,34 @@ figure.update_layout(
     xaxis_title="X (µm)",
     yaxis_title="Y (µm)",
     legend_title="Mineral",
-    meta={"map_layer_key":"overlay::"+"|".join(sorted(mineral_points)), "dataset_identities":[[l.sample_id,l.mineral_id,l.run_id] for l in layers]},
+    meta={
+        "map_layer_key": "overlay::" + "|".join(sorted(mineral_points)),
+        "dataset_identities": [[l.sample_id, l.mineral_id, l.run_id] for l in layers],
+    },
 )
 figure.update_yaxes(scaleanchor="x")
 from core.domain_maps import domain_controls, draw_domains
-saved_domains=domain_controls(st.session_state,layers,'mineral_saved')
+
+show_domains = st.checkbox(
+    "Show saved domain overlays", value=False, key="mineral_show_domains"
+)
+saved_domains = (
+    domain_controls(st.session_state, layers, "mineral_saved") if show_domains else {}
+)
+show_domain_labels = st.checkbox(
+    "Show domain labels", value=False, key="mineral_domain_labels"
+)
 if saved_domains:
-    domain_style=st.selectbox('Domain display style',['Filled pixels','Circles'])
-    domain_opacity=st.slider('Domain opacity',.1,1.,.8)
-    draw_domains(figure,saved_domains,st.session_state,domain_style,domain_opacity)
+    domain_style = st.selectbox("Domain display style", ["Filled pixels", "Circles"])
+    domain_opacity = st.slider("Domain opacity", 0.1, 1.0, 0.8)
+    draw_domains(
+        figure,
+        saved_domains,
+        st.session_state,
+        domain_style,
+        domain_opacity,
+        show_labels=show_domain_labels,
+    )
 render_chart(figure, width="stretch")
 if summary:
     st.dataframe(summary, width="stretch", hide_index=True)
