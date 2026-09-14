@@ -6,10 +6,8 @@ import streamlit as st
 from core.exports import render_chart
 
 from core.io import numeric_columns
-from core.state import initialize_state, layer_label
+from core.state import initialize_state
 from core.ui_filters import filter_table_ui
-
-
 
 
 st.set_page_config(page_title="Grain comparison", page_icon="🔬", layout="wide")
@@ -19,13 +17,21 @@ if not st.session_state.grain_results:
     st.info("Detect grains for at least one sample first.")
     st.stop()
 
-from core.ui_filters import channel_layers_ui
-available=[l for l in st.session_state.layers.values() if l.key in st.session_state.grain_results]
+available = [
+    l
+    for l in st.session_state.layers.values()
+    if l.key in st.session_state.grain_results
+]
 if not available:
-    st.info('No detected grain maps are available.');st.stop()
-channel=st.selectbox('Channel',list(dict.fromkeys(l.channel for l in available)),key='grain_compare_channel')
-visible=[l for l in available if l.channel==channel]
-chosen=[l.key for l in visible]
+    st.info("No detected grain maps are available.")
+    st.stop()
+channel = st.selectbox(
+    "Channel",
+    list(dict.fromkeys(l.channel for l in available)),
+    key="grain_compare_channel",
+)
+visible = [l for l in available if l.channel == channel]
+chosen = [l.key for l in visible]
 parts = []
 pixel_parts = []
 for label in chosen:
@@ -96,6 +102,3 @@ if b.button("Use selected grain pixels in plotting"):
     st.success(
         f"{len(selected_pixels):,} pixels from {len(grains):,} grains are available in plotting."
     )
-
-
-
