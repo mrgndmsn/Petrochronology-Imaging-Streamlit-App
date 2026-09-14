@@ -43,6 +43,15 @@ def normalize_selection_data(figure):
     return figure
 
 
+def fixed_map_window(figure, equal_scale=True):
+    # With constrain='domain', Plotly preserves a narrow zoom range by shrinking
+    # the axes inside the canvas. Preserve the canvas and expand ranges instead.
+    figure.update_xaxes(domain=[0,1],constrain='range')
+    figure.update_yaxes(domain=[0,1],constrain='range',
+                        scaleanchor='x' if equal_scale else False,scaleratio=1)
+    return figure
+
+
 def render_chart(figure, **kwargs):
     normalize_selection_data(figure)
     import streamlit as st
@@ -72,8 +81,8 @@ def render_chart(figure, **kwargs):
         if reset: st.session_state[epoch_key]=st.session_state.get(epoch_key,0)+1
         lock=_remembered_input("exports:58:13", st.checkbox, 'Equal X/Y scale',value=True,key=f'{chart_key}_equal_scale',
             help='Turn off to zoom to any rectangular range. Unequal scales distort grain shapes visually.')
-        figure.update_yaxes(scaleanchor='x' if lock else False)
-        figure.update_layout(uirevision=f'{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key,0)}:{lock}')
+        fixed_map_window(figure,lock)
+        figure.update_layout(uirevision=f'fixed-window-v2:{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key,0)}:{lock}')
     else:
         figure.update_layout(uirevision=str(chart_key))
     if identity is not None:
