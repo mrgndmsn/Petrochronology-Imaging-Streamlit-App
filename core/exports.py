@@ -143,8 +143,8 @@ def render_chart(figure, **kwargs):
             "exports:58:13",
             st.checkbox,
             "Equal X/Y scale",
-            value=True,
-            key=f"{chart_key}_equal_scale",
+            value=(figure.layout.meta or {}).get("equal_scale_default", True),
+            key=f"{chart_key}_equal_scale_v2",
             help="Turn off to zoom to any rectangular range. Unequal scales distort grain shapes visually.",
         )
         fixed_map_window(figure, lock)
