@@ -131,6 +131,16 @@ def render_chart(figure, **kwargs):
 
     add_highlight(figure, st.session_state)
     if identity is not None:
+        from .map_layout import data_bounds
+
+        bounds = data_bounds(figure)
+        figure.update_layout(
+            meta={**dict(figure.layout.meta), "full_data_bounds": bounds}
+        )
+        figure.update_layout(
+            legend=dict(orientation="v", x=1.12, y=1, yanchor="top"),
+            margin=dict(t=45, r=260, b=65),
+        )
         if st.session_state.get("active_map_highlight") is not None:
             if st.button("Clear linked highlight", key=chart_key + "_clear_link"):
                 st.session_state.pop("active_map_highlight", None)
@@ -149,7 +159,7 @@ def render_chart(figure, **kwargs):
         )
         fixed_map_window(figure, lock)
         figure.update_layout(
-            uirevision=f"fixed-window-v2:{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key, 0)}:{lock}"
+            uirevision=f"data-fit-v3:{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key, 0)}:{lock}"
         )
     else:
         figure.update_layout(uirevision=str(chart_key))
