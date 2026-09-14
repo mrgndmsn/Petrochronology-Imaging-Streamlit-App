@@ -4,7 +4,9 @@ from .models import PointLayer
 from .provenance import all_channel_pixel_table
 
 
-def raster_mineral_points(layers, reference_keys, rule="finite", threshold=0.0):
+def raster_mineral_points(
+    layers, reference_keys, rule="finite", threshold=0.0, coordinates_only=False
+):
     out = {}
     identities = set()
     for key in reference_keys:
@@ -17,7 +19,13 @@ def raster_mineral_points(layers, reference_keys, rule="finite", threshold=0.0):
         if rule == "greater_than":
             mask &= layer.values > threshold
         rows, cols = np.where(mask)
-        frame = all_channel_pixel_table(layer, rows, cols, layers)
+        if coordinates_only:
+            import pandas as pd
+
+            x, y = layer.coordinates_at(rows, cols)
+            frame = pd.DataFrame({"x": x, "y": y, "presence": layer.values[rows, cols]})
+        else:
+            frame = all_channel_pixel_table(layer, rows, cols, layers)
         point = PointLayer(
             *identity,
             frame,
@@ -35,7 +43,7 @@ def raster_mineral_points(layers, reference_keys, rule="finite", threshold=0.0):
     return out
 
 
-def mineral_layers_ui(state, key):
+def mineral_layers_ui(state, key, coordinates_only=False):
     import streamlit as st
     from .ui_filters import filter_layers_ui
 
@@ -104,6 +112,7 @@ def mineral_layers_ui(state, key):
                 refs,
                 "finite" if rule == "Finite pixels" else "greater_than",
                 threshold,
+                coordinates_only=coordinates_only,
             )
         )
     return {p.key: p for p in filter_layers_ui(points.values(), key + "_filters")}
