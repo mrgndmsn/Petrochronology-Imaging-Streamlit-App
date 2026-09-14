@@ -66,9 +66,13 @@ def project_save_ui():
         st.caption(
             f"Snapshot prepared at {prepared_at} (server time). Later changes are not included until you prepare again."
         )
+        st.caption(
+            f"Prepared file: {len(data) / (1024 * 1024):.1f} MB. Click Download project snapshot, then check your browser Downloads. Preparing alone does not save a local copy."
+        )
         st.download_button(
             "Download project snapshot",
             data,
             "geochemical_project.gmap.zip",
             "application/zip",
+            on_click="ignore",
         )
