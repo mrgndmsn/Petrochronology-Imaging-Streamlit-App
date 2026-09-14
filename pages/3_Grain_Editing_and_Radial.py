@@ -301,7 +301,7 @@ with tab_radial:
                 else 0
             ),
         )
-        from core.xy_link import ROW_ID, capture_plot_selection
+        from core.xy_link import ROW_ID, linked_plot_ui
         pixels=pixels.reset_index(drop=True)
         pixels[ROW_ID]=__import__('numpy').arange(len(pixels))
         radial_figure=px.scatter(pixels,x='distance_normalized',y=channel,color='comparison_group',
@@ -309,7 +309,7 @@ with tab_radial:
         radial_figure.update_layout(dragmode='lasso')
         radial_event=render_chart(radial_figure,width='stretch',key='radial_pixel_selection',
             on_select='rerun',selection_mode=('points','box','lasso'))
-        capture_plot_selection(pixels,radial_event,st.session_state,source="radial")
+        linked_plot_ui(pixels,radial_event,st.session_state,key_prefix='radial')
         st.caption('Lasso or box-select profile pixels to highlight them on matching maps.')
         import pandas as pd
         grouped = pixels.copy()
