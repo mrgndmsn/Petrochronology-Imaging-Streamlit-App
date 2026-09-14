@@ -22,7 +22,7 @@ def rectangle_mask(layer: MapLayer, x0, x1, y0, y1):
 
 
 def polygon_mask(layer: MapLayer, vertices):
-    vertices = np.asarray(vertices, dtype = float)
+    vertices = np.asarray(vertices, dtype=float)
     if vertices.ndim != 2 or vertices.shape[0] < 3 or vertices.shape[1] != 2:
         raise ValueError("A polygon requires at least three X,Y vertices.")
     xx, yy = coordinate_grids(layer)
@@ -123,60 +123,10 @@ def selection_summary(table):
         "n_finite": int(len(values)),
         "mean": float(values.mean()) if len(values) else np.nan,
         "median": float(values.median()) if len(values) else np.nan,
-        "sd": float(values.std(ddof = 1)) if len(values) > 1 else np.nan,
+        "sd": float(values.std(ddof=1)) if len(values) > 1 else np.nan,
         "minimum": float(values.min()) if len(values) else np.nan,
         "maximum": float(values.max()) if len(values) else np.nan,
     }
-
-
-def radial_profile(layer: MapLayer, labels, grain_id, center=None, bins=20):
-    labels = np.asarray(labels, dtype = int)
-    rows, cols = np.where(labels == int(grain_id))
-    if not len(rows):
-        raise ValueError("The selected grain ID is absent.")
-    x, y = layer.coordinates_at(rows, cols)
-    cx, cy = (
-        (float(np.mean(x)), float(np.mean(y))) if center is None else map(float, center)
-    )
-    dx, dy = x - cx, y - cy
-    covariance = (
-        np.cov(np.column_stack((dx, dy)), rowvar=False) if len(rows) > 2 else np.eye(2)
-    )
-    inverse = np.linalg.pinv(covariance)
-    radius = np.sqrt(
-        np.einsum(
-            "ij,jk,ik->i", np.column_stack((dx, dy)), inverse, np.column_stack((dx, dy))
-        )
-    )
-    radius = radius / np.nanmax(radius) if np.nanmax(radius) > 0 else radius
-    table = pd.DataFrame(
-        {
-            "grain_id": int(grain_id),
-            "x": x,
-            "y": y,
-            "radial_distance_normalized": radius,
-            "value": layer.values[rows, cols],
-            "row_index": rows,
-            "column_index": cols,
-        }
-    )
-    table["radial_bin"] = pd.cut(
-        table["radial_distance_normalized"],
-        np.linspace(0, 1, int(bins) + 1),
-        include_lowest=True,
-        labels=False,
-    )
-    summary = (
-        table.groupby("radial_bin", observed=True)
-        .agg(
-            radial_distance_normalized=("radial_distance_normalized", "mean"),
-            value_mean=("value", "mean"),
-            value_sd=("value", "std"),
-            n_pixels=("value", "count"),
-        )
-        .reset_index()
-    )
-    return table, summary
 
 
 def split_grain(
@@ -227,7 +177,15 @@ def merge_grains(labels, grain_ids):
 def nearest_neighbor_stats(points_a, points_b=None):
     a = np.asarray(points_a, dtype=float)
     b = a if points_b is None else np.asarray(points_b, dtype=float)
-    columns = ["source_index", "neighbor_index", "source_x", "source_y", "neighbor_x", "neighbor_y", "nearest_distance_um"]
+    columns = [
+        "source_index",
+        "neighbor_index",
+        "source_x",
+        "source_y",
+        "neighbor_x",
+        "neighbor_y",
+        "nearest_distance_um",
+    ]
     if a.ndim != 2 or b.ndim != 2 or a.shape[1] != 2 or b.shape[1] != 2:
         raise ValueError("Nearest-neighbor inputs must be N×2 coordinates.")
     if not np.isfinite(a).all() or not np.isfinite(b).all():
@@ -255,18 +213,22 @@ def boundary_buffer_stats(layer: MapLayer, phase_mask, buffer_um):
     if mask.shape != layer.values.shape:
         raise ValueError("Phase mask must match the value grid.")
     dx, dy = layer.pixel_size
-    outside_distance = ndimage.distance_transform_edt(~mask, sampling = (dy, dx))
-    inside_distance = ndimage.distance_transform_edt(mask, sampling = (dy, dx))
+    outside_distance = ndimage.distance_transform_edt(~mask, sampling=(dy, dx))
+    inside_distance = ndimage.distance_transform_edt(mask, sampling=(dy, dx))
     signed = np.where(mask, -inside_distance, outside_distance)
     if "x_grid" in layer.metadata and mask.any() and not mask.all():
-        xx,yy = layer.coordinate_grids()
-        xy = np.column_stack((xx.ravel(),yy.ravel()))
+        xx, yy = layer.coordinate_grids()
+        xy = np.column_stack((xx.ravel(), yy.ravel()))
         inside = mask.ravel()
         signed_flat = np.empty(len(xy))
-        signed_flat[inside]=-cKDTree(xy[~inside]).query(xy[inside])[0]
-        signed_flat[~inside]=cKDTree(xy[inside]).query(xy[~inside])[0]
-        signed=signed_flat.reshape(mask.shape)
-    selected = (np.abs(signed) <= float(buffer_um)) if mask.any() and not mask.all() else np.zeros(mask.shape, bool)
+        signed_flat[inside] = -cKDTree(xy[~inside]).query(xy[inside])[0]
+        signed_flat[~inside] = cKDTree(xy[inside]).query(xy[~inside])[0]
+        signed = signed_flat.reshape(mask.shape)
+    selected = (
+        (np.abs(signed) <= float(buffer_um))
+        if mask.any() and not mask.all()
+        else np.zeros(mask.shape, bool)
+    )
     rows, cols = np.where(selected & np.isfinite(layer.values))
     return pd.DataFrame(
         {
@@ -281,49 +243,88 @@ def boundary_buffer_stats(layer: MapLayer, phase_mask, buffer_um):
     )
 
 
-def sampled_profile(reference, layers, vertices, step_um, method = 'bilinear'):
+def sampled_profile(reference, layers, vertices, step_um, method="bilinear"):
     """Interpolate all same-dataset channels along an ordered physical polyline."""
     from scipy.interpolate import RegularGridInterpolator
     from .provenance import compatible_layers
-    vertices = np.asarray(vertices,float)
-    if vertices.ndim != 2 or vertices.shape[1] != 2 or len(vertices) < 2 or not np.isfinite(vertices).all():
-        raise ValueError('Provide two or more finite X,Y vertices.')
-    if not np.isfinite(step_um) or step_um<=0: raise ValueError('Sample spacing must be positive.')
-    lengths = np.linalg.norm(np.diff(vertices,axis = 0),axis = 1)
-    if lengths.sum() <= 0: raise ValueError('Profile length must be greater than zero.')
-    cumulative = np.r_[0,np.cumsum(lengths)]
-    dist = np.r_[np.arange(0,cumulative[-1],step_um),cumulative[-1]]
-    if len(dist)>1_000_000: raise ValueError('Too many samples; increase spacing.')
-    xs = np.interp(dist,cumulative,vertices[:,0]);ys = np.interp(dist,cumulative,vertices[:,1])
-    out = pd.DataFrame({'sample_id':reference.sample_id,'mineral_id':reference.mineral_id,'run_id':reference.run_id,
-                      'x':xs,'y':ys,'distance_along_profile_um':dist,'distance_normalized':dist/cumulative[-1],
-                      'selection_type':'sampled_profile','selection_id':'profile','sampling_method':method})
-    for layer in compatible_layers(reference,layers):
+
+    vertices = np.asarray(vertices, float)
+    if (
+        vertices.ndim != 2
+        or vertices.shape[1] != 2
+        or len(vertices) < 2
+        or not np.isfinite(vertices).all()
+    ):
+        raise ValueError("Provide two or more finite X,Y vertices.")
+    if not np.isfinite(step_um) or step_um <= 0:
+        raise ValueError("Sample spacing must be positive.")
+    lengths = np.linalg.norm(np.diff(vertices, axis=0), axis=1)
+    if lengths.sum() <= 0:
+        raise ValueError("Profile length must be greater than zero.")
+    cumulative = np.r_[0, np.cumsum(lengths)]
+    dist = np.r_[np.arange(0, cumulative[-1], step_um), cumulative[-1]]
+    if len(dist) > 1_000_000:
+        raise ValueError("Too many samples; increase spacing.")
+    xs = np.interp(dist, cumulative, vertices[:, 0])
+    ys = np.interp(dist, cumulative, vertices[:, 1])
+    out = pd.DataFrame(
+        {
+            "sample_id": reference.sample_id,
+            "mineral_id": reference.mineral_id,
+            "run_id": reference.run_id,
+            "x": xs,
+            "y": ys,
+            "distance_along_profile_um": dist,
+            "distance_normalized": dist / cumulative[-1],
+            "selection_type": "sampled_profile",
+            "selection_id": "profile",
+            "sampling_method": method,
+        }
+    )
+    for layer in compatible_layers(reference, layers):
         if "x_grid" in layer.metadata:
             from scipy.ndimage import map_coordinates
-            ci,ri = layer.fractional_indices(xs,ys)
-            out[layer.channel] = map_coordinates(layer.values,np.vstack((ri,ci)),order = 1 if method == 'bilinear' else 0,
-                                               mode = 'constant',cval = np.nan,prefilter = False)
+
+            ci, ri = layer.fractional_indices(xs, ys)
+            out[layer.channel] = map_coordinates(
+                layer.values,
+                np.vstack((ri, ci)),
+                order=1 if method == "bilinear" else 0,
+                mode="constant",
+                cval=np.nan,
+                prefilter=False,
+            )
         else:
-            orderx = np.argsort(layer.x);ordery = np.argsort(layer.y)
-            interp = RegularGridInterpolator((layer.y[ordery],layer.x[orderx]),layer.values[np.ix_(ordery,orderx)],
-                method = 'linear' if method == 'bilinear' else 'nearest',bounds_error=False,fill_value = np.nan)
-            out[layer.channel]=interp(np.column_stack([ys,xs]))
-    out['value'] = out[reference.channel]
+            orderx = np.argsort(layer.x)
+            ordery = np.argsort(layer.y)
+            interp = RegularGridInterpolator(
+                (layer.y[ordery], layer.x[orderx]),
+                layer.values[np.ix_(ordery, orderx)],
+                method="linear" if method == "bilinear" else "nearest",
+                bounds_error=False,
+                fill_value=np.nan,
+            )
+            out[layer.channel] = interp(np.column_stack([ys, xs]))
+    out["value"] = out[reference.channel]
     return out
 
 
-def split_crossed_grains(labels, p0, p1, width_pixels = 1, connectivity = 8, minimum_pixels = 1):
-    updated = np.asarray(labels,int).copy()
+def split_crossed_grains(
+    labels, p0, p1, width_pixels=1, connectivity=8, minimum_pixels=1
+):
+    updated = np.asarray(labels, int).copy()
     changed = 0
     for gid in np.unique(labels):
-        if gid <= 0: continue
+        if gid <= 0:
+            continue
         try:
-            candidate = split_grain(updated,int(gid),p0,p1,width_pixels,connectivity,minimum_pixels)
+            candidate = split_grain(
+                updated, int(gid), p0, p1, width_pixels, connectivity, minimum_pixels
+            )
         except ValueError:
             continue
-        updated = candidate;changed += 1
-    if not changed: raise ValueError('The line did not split any retained grain.')
+        updated = candidate
+        changed += 1
+    if not changed:
+        raise ValueError("The line did not split any retained grain.")
     return updated
-
-
