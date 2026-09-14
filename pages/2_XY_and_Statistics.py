@@ -85,22 +85,20 @@ with tab_xy:
         figure = go.Figure()
         bandwidth2d = st.number_input("2D KDE bandwidth multiplier", min_value=.05, value=1.0)
         try:
-            gx, gy, density = kde_grid(plot_frame, x, y, bandwidth2d)
-            figure.add_trace(go.Contour(x = gx, y = gy, z = density, colorscale = "Viridis", contours = dict(coloring = "heatmap")))
+            from core.kde_display import density_trace
+            contour,gx,gy,density=density_trace(plot_frame,x,y,bandwidth2d,
+                overlay=plot_type.startswith('Scatter +'),log_x=log_x,log_y=log_y)
+            figure.add_trace(contour)
+            st.caption('KDE contours show relative density (peak = 1). Density is estimated in log10 coordinates for axes set to log; nonpositive values on those axes are excluded.')
             xx, yy = np.meshgrid(gx, gy)
             st.download_button("Download 2D KDE grid", pd.DataFrame({"x":xx.ravel(), "y":yy.ravel(),
                 "density":density.ravel()}).to_csv(index = False), "xy_kde.csv", "text/csv")
         except ValueError as exc:
             st.warning(str(exc))
         if plot_type.startswith("Scatter +"):
-            scatter = px.scatter(
-                plot_frame,
-                x = x,
-                y = y,
-                color=None if color == "None" else color,
-                opacity = opacity,
-                custom_data=[ROW_ID],
-            )
+            scatter = xy_figure(plot_frame,x,y,None if color=='None' else color,opacity,
+                log_x,log_y,False,symbol=None if symbol=='None' else symbol,
+                color_map=category_colors,marker_size=marker_size)
             for trace in scatter.data:
                 figure.add_trace(trace)
     if trendline and grouped_fit and color != "None":
