@@ -269,8 +269,8 @@ with tab_pca:
         score_figure.update_layout(dragmode='lasso')
         score_event=render_chart(score_figure,width='stretch',key='pca_score_selection',
             on_select='rerun',selection_mode=('points','box','lasso'))
-        from core.xy_link import capture_plot_selection
-        capture_plot_selection(st.session_state.get('pca_pixel_source'),score_event,st.session_state,source="pca")
+        from core.xy_link import linked_plot_ui
+        linked_plot_ui(st.session_state.get('pca_pixel_source'),score_event,st.session_state,key_prefix='pca')
         st.caption('Lasso or box-select PCA scores to highlight their pixels on matching maps.')
         left, right = st.columns(2)
         left.subheader("Loadings")
