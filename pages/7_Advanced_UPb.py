@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from core.exports import render_chart
@@ -18,7 +19,6 @@ from core.upb_advanced import (
     york_fit,
 )
 from core.desktop_tools import grouped_upb_means
-from core.ui_filters import filter_table_ui
 
 
 st.set_page_config(page_title="Advanced U–Pb", page_icon="⏳", layout="wide")
@@ -27,11 +27,14 @@ st.title("Advanced U–Pb statistics")
 st.caption(
     "Select whether the uploaded absolute uncertainty columns contain 1σ or 2SE values."
 )
-if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
+if not (
+    st.session_state.tables or st.session_state.layers or st.session_state.point_layers
+):
     st.info("Import an analysis table first.")
     st.stop()
 from core.data_sources import analysis_source_ui
-name,frame=analysis_source_ui(st.session_state,"advanced_upb")
+
+name, frame = analysis_source_ui(st.session_state, "advanced_upb")
 if frame.empty:
     st.warning("No rows match the current filters.")
     st.stop()
@@ -235,7 +238,7 @@ with tab_tw:
                 fig.update_yaxes(range=[ymin, ymax])
             render_chart(fig, width="stretch")
             st.write(
-                f"Slope = **{fit['slope']:.6g} ± {2*fit['slope_1se']:.3g} (2σ)**; intercept = **{fit['intercept']:.6g} ± {2*fit['intercept_1se']:.3g} (2σ)**; MSWD = **{fit['mswd']:.3g}**; p = **{fit['p_value']:.3g}**"
+                f"Slope = **{fit['slope']:.6g} ± {2 * fit['slope_1se']:.3g} (2σ)**; intercept = **{fit['intercept']:.6g} ± {2 * fit['intercept_1se']:.3g} (2σ)**; MSWD = **{fit['mswd']:.3g}**; p = **{fit['p_value']:.3g}**"
             )
             st.dataframe(pd.DataFrame(roots), width="stretch", hide_index=True)
         except Exception as exc:
@@ -306,7 +309,7 @@ with tab_dist:
         else list(distribution.groupby(group_key, dropna=False))
     )
     if plot_mode == "Histogram":
-        fig = __import__("plotly.express").express.histogram(
+        fig = px.histogram(
             distribution,
             x="date_ma",
             color=group_key,
@@ -429,8 +432,3 @@ with tab_dist:
         "upb_date_summary.csv",
         "text/csv",
     )
-
-
-
-
-
