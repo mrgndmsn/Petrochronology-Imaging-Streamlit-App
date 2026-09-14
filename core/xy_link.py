@@ -124,19 +124,38 @@ def linked_map_ui(selected,state,key_prefix='xy'):
     layers=[l for l in state.layers.values() if tuple(str(getattr(l,c)) for c in IDS) in identities]
     channel_choices=list(dict.fromkeys(l.channel for l in layers))
     mode=_remembered_input("xy_link:95:9", st.selectbox, 'Linked map coloring',['Element','Mineral'],key=key_prefix+'_link_map_mode')
+    style=_remembered_input('linked_style',st.selectbox,'Selected pixel style',['Circles','Filled pixels'],key=key_prefix+'_highlight_style')
+    highlight_color=_remembered_input('linked_color',st.color_picker,'Selected pixel color','#00ffff',key=key_prefix+'_highlight_color')
+    highlight_opacity=_remembered_input('linked_opacity',st.slider,'Highlight opacity',.1,1.,.8,key=key_prefix+'_highlight_opacity')
+    state['linked_highlight_style']=dict(style=style,color=highlight_color,opacity=highlight_opacity)
     if channel_choices:
         channel=_remembered_input("xy_link:97:16", st.selectbox, 'Linked map element',channel_choices,key=key_prefix+'_link_map_channel')
         background=[l for l in layers if l.channel==channel]
-        figure=map_overlay_figure(background,{}, {},{},'Mineral' if mode=='Mineral' else 'Concentration',mineral_palette(state))
+        display={}
+        if mode=='Element':
+            with st.expander('Linked element color scale',expanded=True):
+                scale=_remembered_input('linked_scale',st.selectbox,'Color scale',['Viridis','Plasma','Inferno','Magma','Cividis','Turbo','Greys'],key=key_prefix+'_map_scale')
+                log_color=_remembered_input('linked_log',st.checkbox,'Log10 element colors',key=key_prefix+'_map_log')
+                vmin=_remembered_input('linked_min',st.number_input,'Color minimum',value=None,key=key_prefix+'_map_min')
+                vmax=_remembered_input('linked_max',st.number_input,'Color maximum',value=None,key=key_prefix+'_map_max')
+                st.caption('Leave bounds empty for automatic limits. Enter bounds in the original concentration units, including for log colors.')
+                if (vmin is not None and vmax is not None and vmin>=vmax) or (log_color and any(v is not None and v<=0 for v in (vmin,vmax))):
+                    st.error('Color bounds must increase and must be positive for log colors.');return
+                display=dict(colorscale=scale,log_color=log_color)
+                if vmin is not None:display['vmin']=vmin
+                if vmax is not None:display['vmax']=vmax
+        figure=map_overlay_figure(background,{}, {},{},'Mineral' if mode=='Mineral' else 'Concentration',mineral_palette(state),**display)
     else:
         figure=go.Figure()
         for layer in state.point_layers.values():
             if tuple(str(getattr(layer,c)) for c in IDS) not in identities:continue
             figure.add_scattergl(x=layer.frame[layer.x_column],y=layer.frame[layer.y_column],mode='markers',name=layer.mineral_id,marker=dict(size=3,color=mineral_palette(state).get(layer.mineral_id,'gray')))
         st.caption('No matching raster channel: displaying available mineral point locations.')
+    from .map_highlight import selected_pixel_trace
     for identity,g in spatial.groupby(IDS,dropna=False):
-        figure.add_scattergl(x=g.x,y=g.y,mode='markers',name='Selected: '+' / '.join(map(str,identity)),
-            marker=dict(size=9,color='#00ffff',symbol='circle-open',line=dict(width=2)),legendgroup='selection::xy')
+        selected_pixel_trace(figure,g,identity,state,style,highlight_color,highlight_opacity)
+    if style=='Filled pixels' and not layers:
+        st.caption('Point-only data have no raster footprint; highlights use square markers.')
     figure.update_yaxes(scaleanchor='x',scaleratio=1)
     figure.update_layout(xaxis_title='X (µm)',yaxis_title='Y (µm)')
     render_chart(figure,width='stretch',key=key_prefix+'_linked_map')
@@ -147,6 +166,7 @@ def linked_map_ui(selected,state,key_prefix='xy'):
         name=domain_name.strip();base=name;i=2
         while name in state.selections:name=f'{base} {i}';i+=1
         spatial=spatial.copy();spatial['selection_type']='xy_link';spatial['selection_id']=name
+        spatial.attrs['display_color']=highlight_color
         state.selections[name]=spatial
         state.tables['Selection | '+name]=spatial
         st.success(f'Saved {name}. It is available in map selections and analysis data sources.')
