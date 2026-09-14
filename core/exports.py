@@ -30,7 +30,21 @@ def static_figure_bytes(figure, format='png', width=1200, height=800, scale=2):
     return figure.to_image(format=format,width=int(width),height=int(height),scale=float(scale))
 
 
+def normalize_selection_data(figure):
+    # Plotly 6 encodes numpy arrays as dtype/bdata objects. Some selection-event
+    # paths forward those objects instead of decoding the per-point row values.
+    # Object arrays retain the same values and serialize as plain JSON arrays.
+    for trace in figure.data:
+        data=getattr(trace,'customdata',None)
+        if isinstance(data,np.ndarray) and data.dtype != object:
+            # Plotly skips assignments that compare equal, even if dtype changed.
+            trace.customdata=None
+            trace.customdata=data.astype(object)
+    return figure
+
+
 def render_chart(figure, **kwargs):
+    normalize_selection_data(figure)
     import streamlit as st
     from .mineral_colors import mineral_palette, apply_mineral_colors
     apply_mineral_colors(figure,mineral_palette(st.session_state))
