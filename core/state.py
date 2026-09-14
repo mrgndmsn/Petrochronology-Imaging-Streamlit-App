@@ -32,17 +32,3 @@ def layer_label(layer) -> str:
 
 def layer_options() -> dict[str, str]:
     return {layer_label(layer): key for key, layer in st.session_state.layers.items()}
-
-
-def active_table():
-    name = st.session_state.active_table_name
-    return st.session_state.tables.get(name) if name else None
-
-
-
-
-
-
-
-
-  
