@@ -1,6 +1,8 @@
 """Resolve scatter selections by row identity, never by concentration equality."""
 from core.page_memory import remembered_input as _remembered_input
 import hashlib
+from collections.abc import Mapping
+import base64
 import numpy as np
 import pandas as pd
 
@@ -14,14 +16,39 @@ def selection_key(frame, settings):
     return 'xy_link_'+digest.hexdigest()[:20]
 
 
+def selection_row_id(data):
+    """Read only an explicit integral row ID; never infer it from trace indices."""
+    if isinstance(data,Mapping):
+        if ROW_ID in data:data=data[ROW_ID]
+        elif '0' in data:data=data['0']
+        elif 0 in data:data=data[0]
+        elif 'bdata' in data and 'dtype' in data:
+            try:
+                dtype=np.dtype(data['dtype'])
+                if dtype.kind not in 'iu' or dtype.itemsize>8:return None
+                values=np.frombuffer(base64.b64decode(data['bdata'],validate=True),dtype=dtype)
+                # A whole trace's array cannot identify a single selected point.
+                if values.size!=1:return None
+                data=values[0]
+            except (ValueError,TypeError):return None
+        else:return None
+    elif isinstance(data,(list,tuple,np.ndarray)):
+        if len(data)==0:return None
+        data=data[0]
+    if isinstance(data,(bool,np.bool_)):return None
+    try:
+        value=int(data)
+        if isinstance(data,(float,np.floating)) and (not np.isfinite(data) or data!=value):return None
+        return value
+    except (ValueError,TypeError,OverflowError):return None
+
+
 def selected_rows(frame,event):
-    selection=event.get('selection',{}) if isinstance(event,dict) else getattr(event,'selection',{})
+    selection=event.get('selection',{}) if isinstance(event,Mapping) else getattr(event,'selection',{})
     ids=[]
-    for point in selection.get('points',[]):
-        data=point.get('customdata')
-        if data is not None and len(data):
-            try:ids.append(int(data[0]))
-            except (ValueError,TypeError):pass
+    for point in (selection or {}).get('points',[]):
+        value=selection_row_id(point.get('customdata'))
+        if value is not None:ids.append(value)
     return frame.loc[frame[ROW_ID].isin(ids)].drop(columns=[ROW_ID]).copy()
 
 
@@ -75,27 +102,30 @@ def spatial_rows(selected,state):
     return pd.concat(parts,ignore_index=True,sort=False).drop_duplicates(IDS+['x','y']),unmapped
 
 
-def linked_map_ui(selected,state):
+def linked_map_ui(selected,state,key_prefix='xy'):
     import streamlit as st
     import plotly.graph_objects as go
     from .exports import render_chart
     from .selection_maps import map_overlay_figure
     from .mineral_colors import mineral_palette
-    if selected.empty and state.get('active_map_highlight') is not None:
-        selected=state['active_map_highlight']
+    saved_key='linked_plot_pixels::'+key_prefix
+    if selected.empty and state.get(saved_key) is not None:
+        selected=state[saved_key]
     if selected.empty:
         st.caption('Use the lasso or box tool on the scatter plot to highlight corresponding map locations.');return
     spatial,unmapped=spatial_rows(selected,state)
     st.caption(f'{len(selected):,} selected observations; {len(spatial):,} unique spatial pixels; {unmapped:,} observations without resolvable spatial provenance.')
     if spatial.empty:return
-    activate_pixels(spatial,state,'xy')
+    state[saved_key]=spatial
+    activate_pixels(spatial,state,key_prefix)
+    st.subheader('Selected pixels on the map')
     st.caption('These pixels remain highlighted on matching maps when you change pages. Use Clear linked highlight on a map to remove them.')
     identities={tuple(str(row[c]) for c in IDS) for _,row in spatial[IDS].drop_duplicates().iterrows()}
     layers=[l for l in state.layers.values() if tuple(str(getattr(l,c)) for c in IDS) in identities]
     channel_choices=list(dict.fromkeys(l.channel for l in layers))
-    mode=_remembered_input("xy_link:95:9", st.selectbox, 'Linked map coloring',['Element','Mineral'],key='xy_link_map_mode')
+    mode=_remembered_input("xy_link:95:9", st.selectbox, 'Linked map coloring',['Element','Mineral'],key=key_prefix+'_link_map_mode')
     if channel_choices:
-        channel=_remembered_input("xy_link:97:16", st.selectbox, 'Linked map element',channel_choices,key='xy_link_map_channel')
+        channel=_remembered_input("xy_link:97:16", st.selectbox, 'Linked map element',channel_choices,key=key_prefix+'_link_map_channel')
         background=[l for l in layers if l.channel==channel]
         figure=map_overlay_figure(background,{}, {},{},'Mineral' if mode=='Mineral' else 'Concentration',mineral_palette(state))
     else:
@@ -109,10 +139,10 @@ def linked_map_ui(selected,state):
             marker=dict(size=9,color='#00ffff',symbol='circle-open',line=dict(width=2)),legendgroup='selection::xy')
     figure.update_yaxes(scaleanchor='x',scaleratio=1)
     figure.update_layout(xaxis_title='X (µm)',yaxis_title='Y (µm)')
-    render_chart(figure,width='stretch',key='xy_linked_map')
+    render_chart(figure,width='stretch',key=key_prefix+'_linked_map')
     st.caption('Disconnected selected pixels remain disconnected. Overlay datasets only when their physical coordinates are registered.')
-    domain_name=_remembered_input("xy_link:113:16", st.text_input, 'Linked domain name','XY selection')
-    if st.button('Save selected map pixels as domain'):
+    domain_name=_remembered_input("xy_link:113:16", st.text_input, 'Linked domain name',key_prefix.upper()+' selection',key=key_prefix+'_linked_domain_name')
+    if st.button('Save selected map pixels as domain',key=key_prefix+'_save_linked_domain'):
         if not domain_name.strip():st.error('Enter a domain name.');return
         name=domain_name.strip();base=name;i=2
         while name in state.selections:name=f'{base} {i}';i+=1
@@ -120,7 +150,7 @@ def linked_map_ui(selected,state):
         state.selections[name]=spatial
         state.tables['Selection | '+name]=spatial
         st.success(f'Saved {name}. It is available in map selections and analysis data sources.')
-    st.download_button('Download linked pixels',spatial.to_csv(index=False),'xy_linked_pixels.csv','text/csv')
+    st.download_button('Download linked pixels',spatial.to_csv(index=False),'xy_linked_pixels.csv','text/csv',key=key_prefix+'_download_linked_pixels')
 
 
 def capture_plot_selection(frame,event,state,source='plot'):
@@ -140,3 +170,10 @@ def activate_pixels(pixels,state,source):
     if state.get(key)!=signature:
         state[key]=signature
         state['active_map_highlight']=pixels
+
+
+def linked_plot_ui(frame,event,state,key_prefix):
+    if frame is None or frame.empty:return
+    frame=frame.reset_index(drop=True).copy()
+    frame[ROW_ID]=np.arange(len(frame))
+    linked_map_ui(selected_rows(frame,event),state,key_prefix=key_prefix)
