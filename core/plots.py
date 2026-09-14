@@ -37,10 +37,28 @@ def map_figure(
         vmax = np.log10(vmax) if vmax is not None and vmax > 0 else None
     if "x_grid" in layer.metadata:
         xx, yy = layer.coordinate_grids()
-        figure.add_trace(go.Scattergl(x=xx.ravel(),y=yy.ravel(),mode='markers',customdata=layer.values.ravel(),
-            marker=dict(symbol='square',size=7,color=display_values.ravel(),colorscale=colorscale,
-                        cmin=vmin,cmax=vmax,showscale=show_colorbar,colorbar=dict(title=("log10 " if log_color else "")+layer.channel)),
-            hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",name=layer.channel))
+        figure.add_trace(
+            go.Scattergl(
+                x=xx.ravel(),
+                y=yy.ravel(),
+                mode="markers",
+                customdata=layer.values.ravel(),
+                marker=dict(
+                    symbol="square",
+                    size=7,
+                    color=display_values.ravel(),
+                    colorscale=colorscale,
+                    cmin=vmin,
+                    cmax=vmax,
+                    showscale=show_colorbar,
+                    colorbar=dict(
+                        title=("log10 " if log_color else "") + layer.channel
+                    ),
+                ),
+                hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",
+                name=layer.channel,
+            )
+        )
     else:
         figure.add_trace(
             go.Heatmap(
@@ -61,8 +79,8 @@ def map_figure(
         yy, xx = np.where(boundary & (labels > 0))
         figure.add_trace(
             go.Scattergl(
-                x=layer.coordinates_at(yy,xx)[0],
-                y=layer.coordinates_at(yy,xx)[1],
+                x=layer.coordinates_at(yy, xx)[0],
+                y=layer.coordinates_at(yy, xx)[1],
                 mode="markers",
                 marker={"size": 2, "color": "white"},
                 name="Grain boundaries",
@@ -72,7 +90,12 @@ def map_figure(
     _add_selection_overlays(figure, selections or {})
     if grain_shapes is not None and len(grain_shapes):
         _add_grain_centers_and_spokes(
-            figure, grain_shapes, manual_centers or {}, int(radial_spokes), layer, labels
+            figure,
+            grain_shapes,
+            manual_centers or {},
+            int(radial_spokes),
+            layer,
+            labels,
         )
     if selectable:
         _add_selection_surface(figure, layer, maximum_selection_points)
@@ -105,14 +128,25 @@ def map_figure(
             font={"color": scale_bar_color},
         )
     figure.update_layout(
-        template="plotly_white", height=700, margin=dict(l=20, r=20, t=35, b=20),
-        uirevision=layer.key, clickmode="event+select",
-        meta={"map_layer_key": layer.key, "dataset_identities": [[layer.sample_id,layer.mineral_id,layer.run_id]]},
-        newselection=dict(line=dict(color="red",width=2,dash="solid"))
+        template="plotly_white",
+        height=700,
+        margin=dict(l=20, r=20, t=35, b=20),
+        uirevision=layer.key,
+        clickmode="event+select",
+        meta={
+            "map_layer_key": layer.key,
+            "dataset_identities": [[layer.sample_id, layer.mineral_id, layer.run_id]],
+        },
+        newselection=dict(line=dict(color="red", width=2, dash="solid")),
     )
-    figure.update_xaxes(title="X (µm)", autorange="reversed" if invert_x else True, constrain="domain")
+    figure.update_xaxes(
+        title="X (µm)", autorange="reversed" if invert_x else True, constrain="domain"
+    )
     figure.update_yaxes(
-        title="Y (µm)", autorange="reversed" if invert_y else True, scaleanchor="x", constrain="domain"
+        title="Y (µm)",
+        autorange="reversed" if invert_y else True,
+        scaleanchor="x",
+        constrain="domain",
     )
     return figure
 
@@ -121,14 +155,18 @@ def _add_selection_surface(figure, layer, maximum_points):
     """Add a light WebGL sampling grid so Plotly can report click/box/lasso events."""
     rows, columns = layer.values.shape
     total = rows * columns
-    stride = 1 if maximum_points is None else max(1, int(np.ceil(np.sqrt(total / max(1, int(maximum_points))))))
+    stride = (
+        1
+        if maximum_points is None
+        else max(1, int(np.ceil(np.sqrt(total / max(1, int(maximum_points))))))
+    )
     rr, cc = np.mgrid[0:rows:stride, 0:columns:stride]
     finite = np.isfinite(layer.values[rr, cc])
     rr, cc = rr[finite], cc[finite]
     figure.add_trace(
         go.Scattergl(
-            x=layer.coordinates_at(rr,cc)[0],
-            y=layer.coordinates_at(rr,cc)[1],
+            x=layer.coordinates_at(rr, cc)[0],
+            y=layer.coordinates_at(rr, cc)[1],
             mode="markers",
             customdata=np.column_stack([rr, cc]),
             marker={"size": 5, "color": "rgba(255,255,255,0.015)"},
@@ -139,7 +177,7 @@ def _add_selection_surface(figure, layer, maximum_points):
     )
 
 
-def _add_selection_overlays(figure, selections):
+def _add_selection_overlays(figure, selections, show_labels=True):
     for name, table in selections.items():
         if table is None or len(table) == 0 or "x" not in table or "y" not in table:
             continue
@@ -149,27 +187,52 @@ def _add_selection_overlays(figure, selections):
             else ("profile" if "distance_along_profile_um" in table else "selection")
         )
         from .selection_style import selection_color, profile_buffer
+
         color = selection_color(table)
-        label=str(table.selection_id.iloc[0]) if 'selection_id' in table else str(name).split('::')[-1]
-        figure.add_scattergl(x=[float(table.x.mean())],y=[float(table.y.mean())],mode='text',text=[label],
-            textfont=dict(color=color,size=14),name=label+' label',legendgroup='selection::'+str(name),showlegend=False,hoverinfo='skip')
-        geometry=table.attrs.get('selection_geometry')
+        label = (
+            str(table.selection_id.iloc[0])
+            if "selection_id" in table
+            else str(name).split("::")[-1]
+        )
+        if show_labels:
+            figure.add_scattergl(
+                x=[float(table.x.mean())],
+                y=[float(table.y.mean())],
+                mode="text",
+                text=[label],
+                textfont=dict(color=color, size=14),
+                name=label + " label",
+                legendgroup="selection::" + str(name),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        geometry = table.attrs.get("selection_geometry")
         if geometry:
-            coords=np.asarray(geometry['coordinates'],float)
-            if geometry['kind']=='profile':profile_buffer(figure,coords,geometry.get('width',0),color,label+' buffer')
-            shape=geometry['kind']
-            if shape=='rectangle':
-                x0,x1,y0,y1=coords
-                xs,ys=[x0,x1,x1,x0,x0],[y0,y0,y1,y1,y0]
-            elif shape=='spot':
-                x,y,r=coords
-                angles=np.linspace(0,2*np.pi,129)
-                xs,ys=x+r*np.cos(angles),y+r*np.sin(angles)
+            coords = np.asarray(geometry["coordinates"], float)
+            if geometry["kind"] == "profile":
+                profile_buffer(
+                    figure, coords, geometry.get("width", 0), color, label + " buffer"
+                )
+            shape = geometry["kind"]
+            if shape == "rectangle":
+                x0, x1, y0, y1 = coords
+                xs, ys = [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]
+            elif shape == "spot":
+                x, y, r = coords
+                angles = np.linspace(0, 2 * np.pi, 129)
+                xs, ys = x + r * np.cos(angles), y + r * np.sin(angles)
             else:
-                if shape=='lasso':coords=np.vstack([coords,coords[0]])
-                xs,ys=coords[:,0],coords[:,1]
-            figure.add_scattergl(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
-                name=str(name).split('::')[-1],legendgroup='selection::'+str(name))
+                if shape == "lasso":
+                    coords = np.vstack([coords, coords[0]])
+                xs, ys = coords[:, 0], coords[:, 1]
+            figure.add_scattergl(
+                x=xs,
+                y=ys,
+                mode="lines",
+                line=dict(color=color, width=2, dash="solid"),
+                name=str(name).split("::")[-1],
+                legendgroup="selection::" + str(name),
+            )
             continue
         if kind == "profile":
             ordered = table.sort_values("distance_along_profile_um")
@@ -194,41 +257,83 @@ def _add_selection_overlays(figure, selections):
                 )
             )
         elif {"row_index", "column_index"}.issubset(table.columns):
-            identities=[c for c in ('sample_id','mineral_id','run_id') if c in table]
-            groups=table.groupby(identities,dropna=False) if identities else [('all',table)]
-            xs,ys=[],[]
-            for _,part in groups:
-                source=str(part.source_layer_key.iloc[0]) if 'source_layer_key' in part else None
-                sizes=table.attrs.get('pixel_sizes',{})
-                if source is None and all(c in part for c in ('sample_id','mineral_id','run_id','channel')):
-                    source='::'.join(str(part[c].iloc[0]) for c in ('sample_id','mineral_id','run_id','channel'))
+            identities = [
+                c for c in ("sample_id", "mineral_id", "run_id") if c in table
+            ]
+            groups = (
+                table.groupby(identities, dropna=False)
+                if identities
+                else [("all", table)]
+            )
+            xs, ys = [], []
+            for _, part in groups:
+                source = (
+                    str(part.source_layer_key.iloc[0])
+                    if "source_layer_key" in part
+                    else None
+                )
+                sizes = table.attrs.get("pixel_sizes", {})
+                if source is None and all(
+                    c in part for c in ("sample_id", "mineral_id", "run_id", "channel")
+                ):
+                    source = "::".join(
+                        str(part[c].iloc[0])
+                        for c in ("sample_id", "mineral_id", "run_id", "channel")
+                    )
+
                 def step(column):
-                    d=np.diff(np.sort(part[column].unique()))
-                    return float(np.min(d[d>0])) if np.any(d>0) else 1.
-                dx,dy=sizes.get(source,(step('x'),step('y')))
-                part=part.drop_duplicates(['row_index','column_index'])
-                cells=set(zip(part.row_index.astype(int),part.column_index.astype(int)))
+                    d = np.diff(np.sort(part[column].unique()))
+                    return float(np.min(d[d > 0])) if np.any(d > 0) else 1.0
+
+                dx, dy = sizes.get(source, (step("x"), step("y")))
+                part = part.drop_duplicates(["row_index", "column_index"])
+                cells = set(
+                    zip(part.row_index.astype(int), part.column_index.astype(int))
+                )
                 for row in part.itertuples():
-                    r,c=int(row.row_index),int(row.column_index)
-                    x0,x1,y0,y1=row.x-dx/2,row.x+dx/2,row.y-dy/2,row.y+dy/2
-                    for neighbor,ends in [((r,c-1),(x0,y0,x0,y1)),((r,c+1),(x1,y0,x1,y1)),
-                                          ((r-1,c),(x0,y0,x1,y0)),((r+1,c),(x0,y1,x1,y1))]:
+                    r, c = int(row.row_index), int(row.column_index)
+                    x0, x1, y0, y1 = (
+                        row.x - dx / 2,
+                        row.x + dx / 2,
+                        row.y - dy / 2,
+                        row.y + dy / 2,
+                    )
+                    for neighbor, ends in [
+                        ((r, c - 1), (x0, y0, x0, y1)),
+                        ((r, c + 1), (x1, y0, x1, y1)),
+                        ((r - 1, c), (x0, y0, x1, y0)),
+                        ((r + 1, c), (x0, y1, x1, y1)),
+                    ]:
                         if neighbor not in cells:
-                            xa,ya,xb,yb=ends;xs.extend([xa,xb,None]);ys.extend([ya,yb,None])
-            figure.add_scattergl(x=xs,y=ys,mode='lines',line=dict(color=color,width=2,dash='solid'),
-                name=str(name).split('::')[-1],legendgroup='selection::'+str(name))
+                            xa, ya, xb, yb = ends
+                            xs.extend([xa, xb, None])
+                            ys.extend([ya, yb, None])
+            figure.add_scattergl(
+                x=xs,
+                y=ys,
+                mode="lines",
+                line=dict(color=color, width=2, dash="solid"),
+                name=str(name).split("::")[-1],
+                legendgroup="selection::" + str(name),
+            )
 
 
-def _add_grain_centers_and_spokes(figure, shapes, manual_centers, spoke_count, layer=None, labels=None):
+def _add_grain_centers_and_spokes(
+    figure, shapes, manual_centers, spoke_count, layer=None, labels=None
+):
     from .provenance import ordered_spokes, refit_moved_ellipse
     from types import SimpleNamespace
+
     for _, row in shapes.iterrows():
         gid = int(row["grain_id"])
         center = manual_centers.get(str(gid), manual_centers.get(gid))
         cx, cy = (
             center
             if center is not None
-            else (row.get("ellipse_center_x_um", row.get("centroid_x_um")), row.get("ellipse_center_y_um", row.get("centroid_y_um")))
+            else (
+                row.get("ellipse_center_x_um", row.get("centroid_x_um")),
+                row.get("ellipse_center_y_um", row.get("centroid_y_um")),
+            )
         )
         if not np.isfinite([cx, cy]).all():
             continue
@@ -239,7 +344,7 @@ def _add_grain_centers_and_spokes(figure, shapes, manual_centers, spoke_count, l
                 mode="markers+text",
                 text=[str(gid)],
                 textposition="top center",
-                textfont={"color":"white","size":15},
+                textfont={"color": "white", "size": 15},
                 marker={"size": 10, "color": "white", "symbol": "x"},
                 name=f"Center {gid}",
                 showlegend=False,
@@ -247,23 +352,45 @@ def _add_grain_centers_and_spokes(figure, shapes, manual_centers, spoke_count, l
         )
         shape = row.copy()
         if center is not None and layer is not None and labels is not None:
-            major, minor, angle = refit_moved_ellipse(layer, SimpleNamespace(labels=labels, shape_table=shapes), gid, center)
-            shape['grain_length_um'], shape['grain_width_um'], shape['orientation_deg'] = major, minor, angle
-        major = float(shape.get('grain_length_um', np.nan))
-        minor = float(shape.get('grain_width_um', np.nan))
-        angle = np.deg2rad(float(shape.get('orientation_deg', 0.)))
+            major, minor, angle = refit_moved_ellipse(
+                layer, SimpleNamespace(labels=labels, shape_table=shapes), gid, center
+            )
+            (
+                shape["grain_length_um"],
+                shape["grain_width_um"],
+                shape["orientation_deg"],
+            ) = major, minor, angle
+        major = float(shape.get("grain_length_um", np.nan))
+        minor = float(shape.get("grain_width_um", np.nan))
+        angle = np.deg2rad(float(shape.get("orientation_deg", 0.0)))
         if np.isfinite([major, minor, angle]).all() and major > 0 and minor > 0:
-            t = np.linspace(0, 2*np.pi, 129)
-            u, v = major/2*np.cos(t), minor/2*np.sin(t)
-            figure.add_trace(go.Scatter(x=cx+u*np.cos(angle)-v*np.sin(angle),
-                y=cy+u*np.sin(angle)+v*np.cos(angle), mode='lines',
-                line=dict(color='#00ffff',width=2), name=f'Ellipse {gid}',
-                showlegend=False, hoverinfo='name'))
+            t = np.linspace(0, 2 * np.pi, 129)
+            u, v = major / 2 * np.cos(t), minor / 2 * np.sin(t)
+            figure.add_trace(
+                go.Scatter(
+                    x=cx + u * np.cos(angle) - v * np.sin(angle),
+                    y=cy + u * np.sin(angle) + v * np.cos(angle),
+                    mode="lines",
+                    line=dict(color="#00ffff", width=2),
+                    name=f"Ellipse {gid}",
+                    showlegend=False,
+                    hoverinfo="name",
+                )
+            )
         if spoke_count > 0:
-            for spoke in ordered_spokes(shape, (cx,cy), spoke_count):
-                figure.add_trace(go.Scatter(x=[cx,spoke['xedge']],y=[cy,spoke['yedge']],mode='lines+text',
-                    text=['',str(spoke['profile_number'])],textfont=dict(color='white',size=13),line=dict(color='white',width=2),
-                    showlegend=False,hoverinfo='skip'))
+            for spoke in ordered_spokes(shape, (cx, cy), spoke_count):
+                figure.add_trace(
+                    go.Scatter(
+                        x=[cx, spoke["xedge"]],
+                        y=[cy, spoke["yedge"]],
+                        mode="lines+text",
+                        text=["", str(spoke["profile_number"])],
+                        textfont=dict(color="white", size=13),
+                        line=dict(color="white", width=2),
+                        showlegend=False,
+                        hoverinfo="skip",
+                    )
+                )
 
 
 def _erode_labels(labels):
@@ -328,13 +455,22 @@ def wetherill_figure(frame, r68, r75, e68=None, e75=None, color=None):
             line={"color": "black", "width": 1.5},
         )
     )
-    points=px.scatter(frame,x=r68,y=r75,error_x=e68,error_y=e75,color=color,
-        template='plotly_white')
+    points = px.scatter(
+        frame,
+        x=r68,
+        y=r75,
+        error_x=e68,
+        error_y=e75,
+        color=color,
+        template="plotly_white",
+    )
     for trace in points.data:
-        trace.marker.size=7
-        if not color:trace.name='Analyses'
+        trace.marker.size = 7
+        if not color:
+            trace.name = "Analyses"
         figure.add_trace(trace)
-    if color:figure.update_layout(legend_title=color)
+    if color:
+        figure.update_layout(legend_title=color)
     tick_ages = np.array(
         [0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
     )
