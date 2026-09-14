@@ -8,36 +8,46 @@ from core.analysis import evaluate_equation
 from core.state import initialize_state
 
 
-
-
 st.set_page_config(page_title="Calculated columns", page_icon="➗", layout="wide")
 initialize_state()
 st.title("Calculated columns and data table")
 
-if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
+if not (
+    st.session_state.tables or st.session_state.layers or st.session_state.point_layers
+):
     st.info("Import data or run grain detection first.")
     st.stop()
 from core.data_sources import analysis_source_ui
-if '_calculated_next_source' in st.session_state:
-    st.session_state['calculated_source']=st.session_state.pop('_calculated_next_source')
-name,frame=analysis_source_ui(st.session_state,'calculated')
-existing=st.session_state.tables.get(name)
-editable=existing is not None and existing.attrs.get('calculation_snapshot',False) and len(existing)==len(frame)
+
+if "_calculated_next_source" in st.session_state:
+    st.session_state["calculated_source"] = st.session_state.pop(
+        "_calculated_next_source"
+    )
+name, frame = analysis_source_ui(st.session_state, "calculated")
+existing = st.session_state.tables.get(name)
+editable = (
+    existing is not None
+    and existing.attrs.get("calculation_snapshot", False)
+    and len(existing) == len(frame)
+)
 if not editable:
-    st.dataframe(frame,width='stretch',hide_index=True)
-    st.caption('Calculate directly below. Your result will be saved in a separate calculation table; imported data stay unchanged. You can also create an editable copy first.')
-    new_name=st.text_input('Calculation table name','Combined calculations')
-    if st.button('Create editable table from filtered rows'):
+    st.dataframe(frame, width="stretch", hide_index=True)
+    st.caption(
+        "Calculate directly below. Your result will be saved in a separate calculation table; imported data stay unchanged. You can also create an editable copy first."
+    )
+    new_name = st.text_input("Calculation table name", "Combined calculations")
+    if st.button("Create editable table from filtered rows"):
         if not new_name.strip() or new_name in st.session_state.tables:
-            st.error('Enter a new, nonempty table name.')
-        elif frame.empty:st.error('No rows match the filters.')
+            st.error("Enter a new, nonempty table name.")
+        elif frame.empty:
+            st.error("No rows match the filters.")
         else:
-            frame=frame.copy()
-            frame.attrs['calculation_snapshot']=True
-            st.session_state.tables[new_name]=frame
-            st.session_state['_calculated_next_source']=new_name
+            frame = frame.copy()
+            frame.attrs["calculation_snapshot"] = True
+            st.session_state.tables[new_name] = frame
+            st.session_state["_calculated_next_source"] = new_name
             st.rerun()
-frame=frame.copy()
+frame = frame.copy()
 history = st.session_state.table_history.setdefault(name, []) if editable else []
 st.subheader("Shortcuts")
 numeric = [
@@ -73,7 +83,9 @@ elif operation != "Custom equation":
         )
         for i in range(count)
     ]
-st.write("Use exact column names, for example `U238_ppm / PbTotal_ppm`. Wrap names containing spaces or punctuation in backticks: `` `U concentration (ppm)` / `Th concentration (ppm)` ``.")
+st.write(
+    "Use exact column names, for example `U238_ppm / PbTotal_ppm`. Wrap names containing spaces or punctuation in backticks: `` `U concentration (ppm)` / `Th concentration (ppm)` ``."
+)
 new_name = st.text_input("New column name")
 equation = st.text_input("Equation", disabled=operation != "Custom equation")
 if st.button("Calculate column", type="primary"):
@@ -123,9 +135,9 @@ if st.button("Calculate column", type="primary"):
                 while target in st.session_state.tables:
                     target = f"{base} {suffix}"
                     suffix += 1
-                frame.attrs['calculation_snapshot'] = True
+                frame.attrs["calculation_snapshot"] = True
                 st.session_state.tables[target] = frame
-                st.session_state['_calculated_next_source'] = target
+                st.session_state["_calculated_next_source"] = target
                 st.rerun()
             history.append(st.session_state.tables[name].copy())
             st.session_state.tables[name] = frame
@@ -151,25 +163,26 @@ st.download_button(
     "text/csv",
 )
 
-with st.expander('Custom plotting groups'):
+with st.expander("Custom plotting groups"):
     from core.analysis import assign_custom_groups
-    source=st.selectbox('Group source column',list(st.session_state.tables[name].columns))
-    target=st.text_input('Group column name','plot_group')
-    mapping=st.text_area('Group mapping CSV',placeholder='value,group\n1,Core\n2,Rim')
-    unmatched=st.text_input('Unmapped values label','Ungrouped')
-    if st.button('Apply custom groups'):
+
+    source = st.selectbox(
+        "Group source column", list(st.session_state.tables[name].columns)
+    )
+    target = st.text_input("Group column name", "plot_group")
+    mapping = st.text_area(
+        "Group mapping CSV", placeholder="value,group\n1,Core\n2,Rim"
+    )
+    unmatched = st.text_input("Unmapped values label", "Ungrouped")
+    if st.button("Apply custom groups"):
         try:
-            grouped=assign_custom_groups(st.session_state.tables[name],source,mapping,target,unmatched)
+            grouped = assign_custom_groups(
+                st.session_state.tables[name], source, mapping, target, unmatched
+            )
             history.append(st.session_state.tables[name].copy())
-            st.session_state.tables[name]=grouped
-            st.success('Custom groups are available as color/group choices on plotting pages.')
-        except (ValueError,KeyError) as exc: st.error(str(exc))
-
-
-
-
-
-
-
-
-
+            st.session_state.tables[name] = grouped
+            st.success(
+                "Custom groups are available as color/group choices on plotting pages."
+            )
+        except (ValueError, KeyError) as exc:
+            st.error(str(exc))
