@@ -15,8 +15,6 @@ from core.geochronology import (
 from core.io import numeric_columns, suggested_column
 from core.plots import wetherill_figure
 from core.state import initialize_state
-from core.ui_filters import filter_table_ui
-
 
 
 st.set_page_config(page_title="U–Pb geochronology", page_icon="⏳", layout="wide")
@@ -24,23 +22,19 @@ initialize_state()
 st.title("U–Pb geochronology")
 st.caption("Ratio uncertainties selected below must be 1σ absolute uncertainties.")
 
-if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
+if not (
+    st.session_state.tables or st.session_state.layers or st.session_state.point_layers
+):
     st.info("Import a pixel/analysis table or run grain detection first.")
     st.stop()
 from core.data_sources import analysis_source_ui
-name,source=analysis_source_ui(st.session_state,"upb")
+
+name, source = analysis_source_ui(st.session_state, "upb")
 if source.empty:
     st.warning("No rows match the current filters.")
     st.stop()
 numbers = numeric_columns(source)
 choices = ["None"] + numbers
-
-
-def choose(label, suggestions, key):
-    guess = suggested_column(numbers, *suggestions)
-    return st.selectbox(
-        label, choices, index=choices.index(guess) if guess in choices else 0, key=key
-    )
 
 
 c1, c2, c3 = st.columns(3)
@@ -197,8 +191,3 @@ with tab_dates:
 st.caption(
     "For York regression, concordia-date fitting, covariance ellipses, and intercept uncertainties, use the Advanced U–Pb page."
 )
-
-
-
-
-
