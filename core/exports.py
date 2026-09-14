@@ -3,6 +3,10 @@ from core.page_memory import remembered_input as _remembered_input
 from pathlib import Path
 import inspect
 import hashlib
+import logging
+import threading
+
+_STATIC_EXPORT_LOCK = threading.Lock()
 import numpy as np
 
 
@@ -39,7 +43,7 @@ def map_extent_signature(figure):
     return hashlib.sha256(repr(footprint).encode()).hexdigest()[:12]
 
 
-def static_figure_bytes(figure, format="png", width=1200, height=800, scale=2):
+def static_figure_bytes(figure, format="png", width=1200, height=800, scale=1):
     if format not in ("png", "svg", "pdf"):
         raise ValueError("Choose PNG, SVG, or PDF.")
     if (
@@ -48,9 +52,20 @@ def static_figure_bytes(figure, format="png", width=1200, height=800, scale=2):
         or not 1 <= float(scale) <= 4
     ):
         raise ValueError("Export size must be 200–8000 pixels and scale 1–4.")
-    return figure.to_image(
-        format=format, width=int(width), height=int(height), scale=float(scale)
-    )
+    if int(width) * int(height) * float(scale) ** 2 > 16_000_000:
+        raise ValueError(
+            "Use an export size of at most 16 million pixels (for example, 4000 × 4000). Larger exports can exhaust server memory."
+        )
+    if not _STATIC_EXPORT_LOCK.acquire(blocking=False):
+        raise RuntimeError(
+            "Another figure is being exported. Please try again after it finishes."
+        )
+    try:
+        return figure.to_image(
+            format=format, width=int(width), height=int(height), scale=float(scale)
+        )
+    finally:
+        _STATIC_EXPORT_LOCK.release()
 
 
 def normalize_selection_data(figure):
@@ -177,6 +192,9 @@ def render_chart(figure, **kwargs):
             800,
             key=prefix + "_height",
         )
+        st.caption(
+            "PNG dimensions are the actual output dimensions; no extra scaling is applied. Static exports are limited to 16 million pixels."
+        )
         if fmt == "Offline HTML":
             st.download_button(
                 "Download offline figure",
@@ -187,7 +205,8 @@ def render_chart(figure, **kwargs):
             )
         elif st.button("Generate figure file", key=prefix + "_generate"):
             try:
-                data = static_figure_bytes(figure, fmt.lower(), width, height)
+                with st.spinner("Rendering figure…"):
+                    data = static_figure_bytes(figure, fmt.lower(), width, height)
                 mime = {
                     "PNG": "image/png",
                     "SVG": "image/svg+xml",
@@ -201,8 +220,12 @@ def render_chart(figure, **kwargs):
                     key=prefix + "_download",
                 )
             except Exception as exc:
-                st.error(
-                    "Static export requires Kaleido and Chrome/Chromium on the Streamlit server. "
-                    + str(exc)
+                logging.getLogger(__name__).exception(
+                    "Figure export failed: format=%s width=%s height=%s traces=%s",
+                    fmt,
+                    width,
+                    height,
+                    len(figure.data),
                 )
+                st.error("Figure export failed: " + str(exc))
     return event
