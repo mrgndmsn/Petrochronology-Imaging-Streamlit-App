@@ -30,6 +30,7 @@ def read_table(data: bytes, filename: str, nrows: int | None = None) -> pd.DataF
         frame = pd.read_excel(BytesIO(data), nrows=nrows)
     else:
         import csv
+
         sample = data[:65536].decode("utf-8-sig", errors="replace")
         # Sniff only complete lines from the small prefix, never the whole file.
         sample = sample.rsplit("\n", 1)[0] if "\n" in sample else sample
@@ -37,8 +38,14 @@ def read_table(data: bytes, filename: str, nrows: int | None = None) -> pd.DataF
             delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
         except csv.Error:
             delimiter = "\t" if suffix == ".tsv" else ","
-        frame = pd.read_csv(BytesIO(data), sep=delimiter, engine="c", nrows=nrows,
-                            encoding="utf-8-sig", encoding_errors="replace")
+        frame = pd.read_csv(
+            BytesIO(data),
+            sep=delimiter,
+            engine="c",
+            nrows=nrows,
+            encoding="utf-8-sig",
+            encoding_errors="replace",
+        )
     frame.columns = unique_columns(frame.columns)
     return frame
 
@@ -52,7 +59,7 @@ def numeric_columns(frame: pd.DataFrame, excluded: tuple[str, ...] = ()) -> list
         numeric = pd.to_numeric(frame[column], errors="coerce")
         if numeric.notna().any():
             result.append(str(column))
-    return result
+    return sorted(result, key=lambda value: (value.casefold(), value))
 
 
 def suggested_column(columns, *needles):
@@ -85,8 +92,11 @@ def table_to_layer(
     pixel_size_y_um: float | None = None,
     rasterize_coordinates: bool = False,
 ) -> MapLayer:
-    sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um = validate_assignment(
-        sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um)
+    sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um = (
+        validate_assignment(
+            sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
+        )
+    )
     if bool(x_column) != bool(y_column):
         raise ValueError("Select both X and Y coordinate columns, or neither.")
     if x_column and (x_column not in frame or y_column not in frame):
@@ -109,21 +119,39 @@ def table_to_layer(
         x0, y0 = float(work.x.min()), float(work.y.min())
         cf = (work.x.to_numpy(float) - x0) / pixel_size_x_um
         rf = (work.y.to_numpy(float) - y0) / pixel_size_y_um
-        if not rasterize_coordinates and not (np.allclose(cf, np.rint(cf), atol=1e-5, rtol=0) and np.allclose(rf, np.rint(rf), atol=1e-5, rtol=0)):
-            raise ValueError("Coordinates do not align to the explicit X/Y pixel sizes. Enable nearest-cell rasterization for scan coordinates, or use a point layer to retain original coordinates.")
+        if not rasterize_coordinates and not (
+            np.allclose(cf, np.rint(cf), atol=1e-5, rtol=0)
+            and np.allclose(rf, np.rint(rf), atol=1e-5, rtol=0)
+        ):
+            raise ValueError(
+                "Coordinates do not align to the explicit X/Y pixel sizes. Enable nearest-cell rasterization for scan coordinates, or use a point layer to retain original coordinates."
+            )
         nc, nr = int(np.rint(cf).max()) + 1, int(np.rint(rf).max()) + 1
         if nc * nr > 25_000_000:
-            raise ValueError("The explicit X/Y grid is too large; check pixel sizes and coordinates.")
-        work['column_index'], work['row_index'] = np.rint(cf).astype(int), np.rint(rf).astype(int)
-        pivot = work.pivot_table(index='row_index', columns='column_index', values='value', aggfunc='mean')
-        values = pivot.reindex(index=np.arange(nr), columns=np.arange(nc)).to_numpy(float)
+            raise ValueError(
+                "The explicit X/Y grid is too large; check pixel sizes and coordinates."
+            )
+        work["column_index"], work["row_index"] = (
+            np.rint(cf).astype(int),
+            np.rint(rf).astype(int),
+        )
+        pivot = work.pivot_table(
+            index="row_index", columns="column_index", values="value", aggfunc="mean"
+        )
+        values = pivot.reindex(index=np.arange(nr), columns=np.arange(nc)).to_numpy(
+            float
+        )
         x = x0 + np.arange(nc) * pixel_size_x_um
         y = y0 + np.arange(nr) * pixel_size_y_um
         coordinates_are_um = True
     else:
         # A header-bearing table is a column of observations, never an inferred matrix.
         # Headerless matrices have a separate explicit importer.
-        values = pd.to_numeric(frame[channel], errors="coerce").to_numpy(float).reshape(-1, 1)
+        values = (
+            pd.to_numeric(frame[channel], errors="coerce")
+            .to_numpy(float)
+            .reshape(-1, 1)
+        )
         x = np.arange(values.shape[1], dtype=float) * pixel_size_x_um
         y = np.arange(values.shape[0], dtype=float) * pixel_size_y_um
         coordinates_are_um = True
@@ -136,8 +164,14 @@ def table_to_layer(
         values=values,
         x=x.astype(float),
         y=y.astype(float),
-        metadata={"coordinates_are_um": coordinates_are_um, "pixel_size_x_um": pixel_size_x_um, "pixel_size_y_um": pixel_size_y_um,
-                  "coordinate_rasterization": "nearest cell; finite mean for collisions" if rasterize_coordinates else "exact grid"},
+        metadata={
+            "coordinates_are_um": coordinates_are_um,
+            "pixel_size_x_um": pixel_size_x_um,
+            "pixel_size_y_um": pixel_size_y_um,
+            "coordinate_rasterization": "nearest cell; finite mean for collisions"
+            if rasterize_coordinates
+            else "exact grid",
+        },
     )
 
 
@@ -178,7 +212,9 @@ def crop_aligned_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
     return [np.asarray(matrix, dtype=float)[bounds] for matrix in matrices]
 
 
-def validate_assignment(sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um):
+def validate_assignment(
+    sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
+):
     identities = (sample_id, mineral_id, run_id)
     if any(not isinstance(v, str) or not v.strip() for v in identities):
         raise ValueError("Explicit sample, mineral, and run IDs are required.")
@@ -199,19 +235,35 @@ def matrix_channel_name(filename: str):
 
 
 def table_to_point_layer(
-    frame, filename, sample_id=None, mineral_id=None, run_id=None,
-    pixel_size_x_um=None, pixel_size_y_um=None, x_column=None, y_column=None
+    frame,
+    filename,
+    sample_id=None,
+    mineral_id=None,
+    run_id=None,
+    pixel_size_x_um=None,
+    pixel_size_y_um=None,
+    x_column=None,
+    y_column=None,
 ):
     sample_id, mineral_id, run_id, dx, dy = validate_assignment(
-        sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um)
-    x_column = x_column or next((c for c in ("X", "X (µm)", "x", "x [um]") if c in frame), None)
-    y_column = y_column or next((c for c in ("Y", "Y (µm)", "y", "y [um]") if c in frame), None)
+        sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
+    )
+    x_column = x_column or next(
+        (c for c in ("X", "X (µm)", "x", "x [um]") if c in frame), None
+    )
+    y_column = y_column or next(
+        (c for c in ("Y", "Y (µm)", "y", "y [um]") if c in frame), None
+    )
     if x_column not in frame or y_column not in frame or x_column == y_column:
         raise ValueError("No recognized X/Y coordinate columns were found.")
     work = frame.copy()
     work[x_column] = pd.to_numeric(work[x_column], errors="coerce")
     work[y_column] = pd.to_numeric(work[y_column], errors="coerce")
-    work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=[x_column, y_column]).reset_index(drop=True)
+    work = (
+        work.replace([np.inf, -np.inf], np.nan)
+        .dropna(subset=[x_column, y_column])
+        .reset_index(drop=True)
+    )
     if work.empty:
         raise ValueError("No finite coordinate pairs were found.")
     return PointLayer(
@@ -221,15 +273,33 @@ def table_to_point_layer(
         work,
         x_column,
         y_column,
-        {"source_file": filename, "coordinate_units": "µm", "pixel_size_x_um": dx, "pixel_size_y_um": dy},
+        {
+            "source_file": filename,
+            "coordinate_units": "µm",
+            "pixel_size_x_um": dx,
+            "pixel_size_y_um": dy,
+        },
     )
 
 
-def matrix_layers(records, sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um,
-                  origin_x_um=0.0, origin_y_um=0.0, crop=True, x_coordinates=None, y_coordinates=None, collapse_duplicates=False):
+def matrix_layers(
+    records,
+    sample_id,
+    mineral_id,
+    run_id,
+    pixel_size_x_um,
+    pixel_size_y_um,
+    origin_x_um=0.0,
+    origin_y_um=0.0,
+    crop=True,
+    x_coordinates=None,
+    y_coordinates=None,
+    collapse_duplicates=False,
+):
     """One explicitly assigned aligned channel stack. Records: (channel, filename, array)."""
     sample_id, mineral_id, run_id, dx, dy = validate_assignment(
-        sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um)
+        sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
+    )
     if not records:
         raise ValueError("Choose at least one channel.")
     channels = [str(r[0]).strip() for r in records]
@@ -244,30 +314,46 @@ def matrix_layers(records, sample_id, mineral_id, run_id, pixel_size_x_um, pixel
         raise ValueError("Both X and Y coordinate references are required.")
     if collapse_duplicates:
         if x_coordinates is None:
-            raise ValueError("Collapsing coordinate duplicates requires both X and Y reference matrices.")
-        xg, yg = np.asarray(x_coordinates,float), np.asarray(y_coordinates,float)
+            raise ValueError(
+                "Collapsing coordinate duplicates requires both X and Y reference matrices."
+            )
+        xg, yg = np.asarray(x_coordinates, float), np.asarray(y_coordinates, float)
         if xg.shape != arrays[0].shape or yg.shape != arrays[0].shape:
             raise ValueError("Coordinate reference must match the raw matrix shape.")
         valid = np.isfinite(xg) & np.isfinite(yg)
         if not valid.any():
             raise ValueError("No finite coordinate pairs were found.")
         if any(np.any(np.isfinite(a) & ~valid) for a in arrays):
-            raise ValueError("Some finite channel values have no coordinate pair; supply their coordinates before collapsing.")
-        points = np.column_stack((xg[valid],yg[valid]))
-        unique, inverse, counts = np.unique(points,axis=0,return_inverse=True,return_counts=True)
+            raise ValueError(
+                "Some finite channel values have no coordinate pair; supply their coordinates before collapsing."
+            )
+        points = np.column_stack((xg[valid], yg[valid]))
+        unique, inverse, counts = np.unique(
+            points, axis=0, return_inverse=True, return_counts=True
+        )
         layers = {}
-        for (channel,filename,_),a in zip(records,arrays):
-            v=a[valid]; finite=np.isfinite(v)
-            totals=np.bincount(inverse[finite],weights=v[finite],minlength=len(unique))
-            n=np.bincount(inverse[finite],minlength=len(unique))
-            mean=np.divide(totals,n,out=np.full(len(unique),np.nan),where=n>0)
-            frame=pd.DataFrame({'x':unique[:,0],'y':unique[:,1],'value':mean})
-            layer=table_to_layer(frame,sample_id,mineral_id,run_id,'value','x','y',dx,dy)
-            layer.channel=str(channel).strip()
-            layer.metadata.update(source_file=filename,collapsed_coordinate_duplicates=True,
-                coordinate_cells_before=int(valid.sum()),unique_coordinate_pairs=int(len(unique)),
-                duplicate_cells_collapsed=int(valid.sum()-len(unique)),aggregation='finite arithmetic mean per exact X/Y pair')
-            layers[layer.key]=layer
+        for (channel, filename, _), a in zip(records, arrays):
+            v = a[valid]
+            finite = np.isfinite(v)
+            totals = np.bincount(
+                inverse[finite], weights=v[finite], minlength=len(unique)
+            )
+            n = np.bincount(inverse[finite], minlength=len(unique))
+            mean = np.divide(totals, n, out=np.full(len(unique), np.nan), where=n > 0)
+            frame = pd.DataFrame({"x": unique[:, 0], "y": unique[:, 1], "value": mean})
+            layer = table_to_layer(
+                frame, sample_id, mineral_id, run_id, "value", "x", "y", dx, dy
+            )
+            layer.channel = str(channel).strip()
+            layer.metadata.update(
+                source_file=filename,
+                collapsed_coordinate_duplicates=True,
+                coordinate_cells_before=int(valid.sum()),
+                unique_coordinate_pairs=int(len(unique)),
+                duplicate_cells_collapsed=int(valid.sum() - len(unique)),
+                aggregation="finite arithmetic mean per exact X/Y pair",
+            )
+            layers[layer.key] = layer
         return layers
     if x_coordinates is not None:
         x_coordinates = complete_coordinate_grid(x_coordinates, arrays[0].shape)
@@ -282,37 +368,58 @@ def matrix_layers(records, sample_id, mineral_id, run_id, pixel_size_x_um, pixel
         arrays = crop_aligned_matrices(arrays)
     layers = {}
     for (channel, filename, _), values in zip(records, arrays):
-        layer = MapLayer(sample_id, mineral_id, run_id, str(channel).strip(), values,
+        layer = MapLayer(
+            sample_id,
+            mineral_id,
+            run_id,
+            str(channel).strip(),
+            values,
             origin_x_um + (col0 + np.arange(values.shape[1])) * dx,
             origin_y_um + (row0 + np.arange(values.shape[0])) * dy,
-            {"source_file": filename, "pixel_size_x_um": dx, "pixel_size_y_um": dy,
-             "crop_row_offset": row0, "crop_column_offset": col0})
+            {
+                "source_file": filename,
+                "pixel_size_x_um": dx,
+                "pixel_size_y_um": dy,
+                "crop_row_offset": row0,
+                "crop_column_offset": col0,
+            },
+        )
         if x_coordinates is not None:
             height, width = values.shape
-            xg = x_coordinates[row0:row0+height,col0:col0+width].copy()
-            yg = y_coordinates[row0:row0+height,col0:col0+width].copy()
+            xg = x_coordinates[row0 : row0 + height, col0 : col0 + width].copy()
+            yg = y_coordinates[row0 : row0 + height, col0 : col0 + width].copy()
             layer.metadata.update(x_grid=xg, y_grid=yg, coordinate_reference=True)
-            layer.x = np.mean(xg,axis=0)
-            layer.y = np.mean(yg,axis=1)
+            layer.x = np.mean(xg, axis=0)
+            layer.y = np.mean(yg, axis=1)
         layers[layer.key] = layer
     return layers
 
 
 def complete_coordinate_grid(values, shape):
     """Preserve explicit complete grids; fill sparse affine references only when determined."""
-    values=np.asarray(values,float)
-    if values.shape != shape: raise ValueError("Coordinate reference must match the raw matrix shape.")
-    finite=np.isfinite(values)
-    if finite.all(): return values.copy()
-    rr,cc=np.indices(shape)
+    values = np.asarray(values, float)
+    if values.shape != shape:
+        raise ValueError("Coordinate reference must match the raw matrix shape.")
+    finite = np.isfinite(values)
+    if finite.all():
+        return values.copy()
+    rr, cc = np.indices(shape)
     # Singleton dimensions do not need an independent slope.
-    columns=[np.ones(shape)] + ([cc] if shape[1]>1 else []) + ([rr] if shape[0]>1 else [])
-    design=np.column_stack([c[finite] for c in columns])
-    if finite.sum()<len(columns) or np.linalg.matrix_rank(design)<len(columns):
-        raise ValueError("Sparse coordinate reference does not determine its affine grid.")
-    fit=np.linalg.lstsq(design,values[finite],rcond=None)[0]
-    if not np.allclose(design@fit,values[finite],atol=1e-5,rtol=0):
-        raise ValueError("Incomplete non-affine coordinate reference: supply coordinates for every pixel.")
-    out=np.sum(np.asarray(columns)*fit[:,None,None],axis=0)
-    out[finite]=values[finite]
+    columns = (
+        [np.ones(shape)]
+        + ([cc] if shape[1] > 1 else [])
+        + ([rr] if shape[0] > 1 else [])
+    )
+    design = np.column_stack([c[finite] for c in columns])
+    if finite.sum() < len(columns) or np.linalg.matrix_rank(design) < len(columns):
+        raise ValueError(
+            "Sparse coordinate reference does not determine its affine grid."
+        )
+    fit = np.linalg.lstsq(design, values[finite], rcond=None)[0]
+    if not np.allclose(design @ fit, values[finite], atol=1e-5, rtol=0):
+        raise ValueError(
+            "Incomplete non-affine coordinate reference: supply coordinates for every pixel."
+        )
+    out = np.sum(np.asarray(columns) * fit[:, None, None], axis=0)
+    out[finite] = values[finite]
     return out
