@@ -96,9 +96,31 @@ with tab_ree:
     multiplier = st.number_input("REE IQR multiplier", min_value=0.01, value=1.5)
     log = st.checkbox("Log REE Y axis", True)
     max_rows = st.number_input("Maximum individual rows to draw", 1, 10000, 500)
+    from core.ree_colors import group_colors
+
+    color_source = st.selectbox(
+        "REE group colors",
+        ["Saved group colors", "Preset palette"],
+        key="ree_color_source",
+    )
+    st.caption(
+        "Saved colors use mineral and domain/profile colors where available. Other groups, including grains without a saved color, use the selected preset."
+    )
     palette = st.selectbox(
         "REE color scale",
-        ["Viridis", "Plasma", "Inferno", "Magma", "Cividis", "Turbo", "Greys"],
+        [
+            "Plotly",
+            "Safe",
+            "Dark24",
+            "Set2",
+            "Viridis",
+            "Plasma",
+            "Inferno",
+            "Magma",
+            "Cividis",
+            "Turbo",
+            "Greys",
+        ],
     )
     cols = st.columns(2)
     ymin = cols[0].number_input("REE Y minimum (optional)", value=None)
@@ -126,21 +148,25 @@ with tab_ree:
         st.warning("No rows in the requested range.")
     else:
         fig = go.Figure()
-        norm = normalize_ree(work, mapping, standard).reindex(columns=REE_ORDER)
-        export = work.copy()
-        for el in REE_ORDER:
-            export[f"{el}_normalized"] = norm[el]
-        export["normalization"] = standard
+        norm = None
         if mode == "Individual rows":
+            norm = normalize_ree(work, mapping, standard).reindex(columns=REE_ORDER)
             draw = (
                 norm.sample(int(max_rows), random_state=1)
                 if len(norm) > max_rows
                 else norm
             )
-            for i, (idx, row) in enumerate(draw.iterrows()):
-                color = px.colors.sample_colorscale(
-                    palette, [i / max(1, len(draw) - 1)]
-                )[0]
+            row_groups = work[group].astype(str) if group != "None" else None
+            curve_labels = (
+                row_groups.loc[draw.index].tolist()
+                if row_groups is not None
+                else [f"Row {idx}" for idx in draw.index]
+            )
+            curve_colors = group_colors(
+                curve_labels, group, st.session_state, color_source, palette
+            )
+            for (idx, row), label in zip(draw.iterrows(), curve_labels):
+                color = curve_colors[label]
                 fig.add_scatter(
                     x=list(range(len(REE_ORDER))),
                     y=row,
@@ -168,19 +194,9 @@ with tab_ree:
                 work, mapping, standard, summary_group, iqr, multiplier
             )
             labels = list(stats.group.unique())
-            colors = {
-                str(label): px.colors.sample_colorscale(
-                    palette, [i / max(1, len(labels) - 1)]
-                )[0]
-                for i, label in enumerate(labels)
-            }
-            if summary_group == "mineral_id":
-                from core.mineral_colors import mineral_palette
-
-                shared = mineral_palette(st.session_state)
-                colors = {
-                    label: shared.get(label, color) for label, color in colors.items()
-                }
+            colors = group_colors(
+                labels, summary_group, st.session_state, color_source, palette
+            )
             from core.ree_plot import add_ree_summary
 
             stats, messages = add_ree_summary(
@@ -222,18 +238,28 @@ with tab_ree:
                 )
         fig.update_layout(template="plotly_white", height=650)
         render_chart(fig, width="stretch", key="ree_figure")
-        st.download_button(
-            "Download normalized REE rows",
-            export.to_csv(index=False),
-            "ree_normalized.csv",
-            "text/csv",
-        )
-        st.download_button(
-            "Download REE figure",
-            fig.to_html(include_plotlyjs=True),
-            "ree_figure.html",
-            "text/html",
-        )
+        if st.button("Prepare normalized REE download"):
+            if norm is None:
+                norm = normalize_ree(work, mapping, standard).reindex(columns=REE_ORDER)
+            export = work.copy()
+            for el in REE_ORDER:
+                export[f"{el}_normalized"] = norm[el]
+            export["normalization"] = standard
+            st.download_button(
+                "Download normalized REE rows",
+                export.to_csv(index=False),
+                "ree_normalized.csv",
+                "text/csv",
+                on_click="ignore",
+            )
+        if st.button("Prepare REE HTML download"):
+            st.download_button(
+                "Download REE figure",
+                fig.to_html(include_plotlyjs=True),
+                "ree_figure.html",
+                "text/html",
+                on_click="ignore",
+            )
 
 
 with tab_ternary:
