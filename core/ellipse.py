@@ -1,19 +1,20 @@
 """Feret boundary ellipse routines"""
+
 import numpy as np
 
 
-
 def _feret_ellipse_unique_xy_points(x_values, y_values):
-    x_values = np.asarray(x_values, dtype = float)
-    y_values = np.asarray(y_values, dtype = float)
+    x_values = np.asarray(x_values, dtype=float)
+    y_values = np.asarray(y_values, dtype=float)
     good = np.isfinite(x_values) & np.isfinite(y_values)
     pts = np.column_stack([x_values[good], y_values[good]])
     if pts.size == 0:
         return pts.reshape((0, 2))
     rounded = np.round(pts, 9)
-    _, keep = np.unique(rounded, axis = 0, return_index = True)
+    _, keep = np.unique(rounded, axis=0, return_index=True)
     keep = np.sort(keep)
     return pts[keep]
+
 
 def _feret_ellipse_convex_hull(points):
     pts = np.asarray(points, dtype=float)
@@ -40,7 +41,8 @@ def _feret_ellipse_convex_hull(points):
         return pts
     return hull
 
-def _feret_ellipse_long_axis_ellipse_from_points(x_values, y_values, padding = 1.04):
+
+def _feret_ellipse_long_axis_ellipse_from_points(x_values, y_values, padding=1.04):
     pts = _feret_ellipse_unique_xy_points(x_values, y_values)
     if len(pts) < 2:
         return (np.nan, np.nan, np.nan, np.nan, np.nan)
@@ -69,7 +71,7 @@ def _feret_ellipse_long_axis_ellipse_from_points(x_values, y_values, padding = 1
     long_vec = p1 - p0
     major = float(np.hypot(long_vec[0], long_vec[1]))
     if not np.isfinite(major) or major <= 0:
-        center0 = np.nanmean(pts, axis = 0)
+        center0 = np.nanmean(pts, axis=0)
         centered = pts - center0
         cov = np.cov(centered.T)
         evals, evecs = np.linalg.eigh(cov)
@@ -98,13 +100,10 @@ def _feret_ellipse_long_axis_ellipse_from_points(x_values, y_values, padding = 1
         major_axis, minor_axis = (minor_axis, major_axis)
         u = v
     angle = float(np.degrees(np.arctan2(u[1], u[0])))
-    return (float(center[0]), float(center[1]), float(major_axis), float(minor_axis), angle)
-
-
-
-
-
-
-
-
-
+    return (
+        float(center[0]),
+        float(center[1]),
+        float(major_axis),
+        float(minor_axis),
+        angle,
+    )
