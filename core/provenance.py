@@ -32,7 +32,10 @@ def compatible_layers(reference: MapLayer, layers) -> list[MapLayer]:
         and layer.values.shape == reference.values.shape
         and np.allclose(layer.x, reference.x)
         and np.allclose(layer.y, reference.y)
-        and all(np.allclose(a,b) for a,b in zip(layer.coordinate_grids(),reference.coordinate_grids()))
+        and all(
+            np.allclose(a, b)
+            for a, b in zip(layer.coordinate_grids(), reference.coordinate_grids())
+        )
     ]
 
 
@@ -149,20 +152,29 @@ def ellipse_radial_table(
         gid = int(shape.grain_id)
         if gid not in ids:
             continue
-        rows, columns = np.indices(result.labels.shape) if use_full_ellipse else np.where(result.labels == gid)
+        rows, columns = (
+            np.indices(result.labels.shape)
+            if use_full_ellipse
+            else np.where(result.labels == gid)
+        )
         rows, columns = rows.ravel(), columns.ravel()
         if not len(rows):
             continue
         saved = centers.get(gid, centers.get(str(gid)))
         cx, cy = (
-            saved if saved is not None else (shape.get("ellipse_center_x_um", shape.centroid_x_um), shape.get("ellipse_center_y_um", shape.centroid_y_um))
+            saved
+            if saved is not None
+            else (
+                shape.get("ellipse_center_x_um", shape.centroid_x_um),
+                shape.get("ellipse_center_y_um", shape.centroid_y_um),
+            )
         )
         a = float(shape.grain_length_um) / 2
         b = float(shape.grain_width_um) / 2
         angle = float(shape.orientation_deg)
         if saved is not None:
             major, minor, angle = refit_moved_ellipse(reference, result, gid, saved)
-            a, b = major/2, minor/2
+            a, b = major / 2, minor / 2
         theta = np.radians(angle)
         ct, st = np.cos(theta), np.sin(theta)
         xv, yv = reference.coordinates_at(rows, columns)
@@ -285,13 +297,20 @@ def spoke_profile_table(
         center = (
             tuple(saved)
             if saved is not None
-            else (float(shape.get("ellipse_center_x_um", shape.centroid_x_um)), float(shape.get("ellipse_center_y_um", shape.centroid_y_um)))
+            else (
+                float(shape.get("ellipse_center_x_um", shape.centroid_x_um)),
+                float(shape.get("ellipse_center_y_um", shape.centroid_y_um)),
+            )
         )
         grain = result.labels == gid
         spoke_shape = shape.copy()
         if saved is not None:
             major, minor, angle = refit_moved_ellipse(reference, result, gid, saved)
-            spoke_shape["grain_length_um"], spoke_shape["grain_width_um"], spoke_shape["orientation_deg"] = major, minor, angle
+            (
+                spoke_shape["grain_length_um"],
+                spoke_shape["grain_width_um"],
+                spoke_shape["orientation_deg"],
+            ) = major, minor, angle
         for spoke in ordered_spokes(spoke_shape, center, spoke_count):
             x0, y0 = center
             x1, y1 = spoke["xedge"], spoke["yedge"]
@@ -381,11 +400,12 @@ def refit_moved_ellipse(reference, result, grain_id, center):
     rows, cols = np.where(result.labels == int(grain_id))
     theta = np.radians(float(row.orientation_deg))
     xv, yv = reference.coordinates_at(rows, cols)
-    dx, dy = xv-center[0], yv-center[1]
-    xp = dx*np.cos(theta)+dy*np.sin(theta)
-    yp = -dx*np.sin(theta)+dy*np.cos(theta)
-    a=max(float(row.grain_length_um)/2, np.max(np.abs(xp)))
-    b=max(float(row.grain_width_um)/2, np.max(np.abs(yp)))
-    major,minor,angle=2*a,2*b,float(row.orientation_deg)
-    if minor>major: major,minor,angle=minor,major,angle+90
-    return major,minor,angle
+    dx, dy = xv - center[0], yv - center[1]
+    xp = dx * np.cos(theta) + dy * np.sin(theta)
+    yp = -dx * np.sin(theta) + dy * np.cos(theta)
+    a = max(float(row.grain_length_um) / 2, np.max(np.abs(xp)))
+    b = max(float(row.grain_width_um) / 2, np.max(np.abs(yp)))
+    major, minor, angle = 2 * a, 2 * b, float(row.orientation_deg)
+    if minor > major:
+        major, minor, angle = minor, major, angle + 90
+    return major, minor, angle
