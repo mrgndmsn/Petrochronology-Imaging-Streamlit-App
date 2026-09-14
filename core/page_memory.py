@@ -51,5 +51,15 @@ def compiled_page(path,mtime):
 
 def run_page(path):
     path=str(path)
+    calls={}
+    def page_input(identity,method,*args,**kwargs):
+        # A comprehension can create several controls at the same source line.
+        # Include the displayed label and occurrence, not only its line number.
+        if 'key' not in kwargs:
+            label=str(kwargs.get('label',args[0] if args else ''))
+            base=identity+'::'+label
+            count=calls.get(base,0);calls[base]=count+1
+            identity=base+'::'+str(count)
+        return remembered_input(identity,method,*args,**kwargs)
     exec(compiled_page(path,Path(path).stat().st_mtime_ns),
-         {'__name__':'__main__','__file__':path,'_remembered_input':remembered_input})
+         {'__name__':'__main__','__file__':path,'_remembered_input':page_input})
