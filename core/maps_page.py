@@ -25,7 +25,11 @@ finite=np.concatenate([l.values[np.isfinite(l.values)] for l in visible])
 if not finite.size:
     st.info('The visible maps contain no finite values.')
     st.stop()
-map_color=st.selectbox('Map color',['Concentration','Mineral'])
+map_color=st.selectbox('Map color',['Concentration','Mineral','Pixel domains'])
+from core.domain_maps import domain_controls, draw_domains
+saved_domains=domain_controls(st.session_state,visible,'maps_saved')
+domain_style=st.selectbox('Domain display style',['Filled pixels','Circles'])
+domain_opacity=st.slider('Domain opacity',.1,1.,.8)
 st.caption(f'{len(visible)} datasets overlaid for {channel}. Filters control the visible maps. Only overlay samples with comparable physical coordinates.')
 
 controls, display = st.columns([1, 3])
@@ -52,12 +56,18 @@ with controls:
     show_spokes = 0
 
 with display:
-    selection_overlays=filtered_saved_selections(st.session_state.selections,visible)
+    selection_overlays={name:t for name,t in saved_domains.items() if 'selection_type' not in t or t.selection_type.iloc[0]!='xy_link'} if map_color!='Pixel domains' else {}
     map_plot=map_overlay_figure(visible,{}, {},
-        selection_overlays,map_color,mineral_palette(st.session_state),invert_x=invert_x,invert_y=invert_y,
+        selection_overlays,'Concentration' if map_color=='Pixel domains' else map_color,mineral_palette(st.session_state),invert_x=invert_x,invert_y=invert_y,
         vmin=vmin,vmax=vmax,radial_spokes=show_spokes,colorscale=colorscale,scale_bar_um=scale_bar,
         show_colorbar=show_colorbar,scale_bar_color=scale_color,scale_bar_width=scale_width,
         scale_bar_position=scale_position,log_color=log_color)
+    if map_color=='Pixel domains':
+        map_plot.data=()
+        map_plot.update_layout(title='Pixel domains',meta={**dict(map_plot.layout.meta),'domain_map':True})
+        if not saved_domains:st.info('Save a pixel selection as a domain, or draw and save a domain in Selections and Profiles, then select it here.')
+    pixel_domains=saved_domains if map_color=='Pixel domains' else {name:t for name,t in saved_domains.items() if 'selection_type' in t and t.selection_type.iloc[0]=='xy_link'}
+    draw_domains(map_plot,pixel_domains,st.session_state,domain_style,domain_opacity)
     render_chart(map_plot, width="stretch")
     st.download_button(
         "Save interactive map",
