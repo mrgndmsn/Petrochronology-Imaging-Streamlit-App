@@ -6,30 +6,27 @@ LAMBDA_235 = 9.8485e-10
 U238_U235 = 137.818
 
 
-
-
-
 def ratio76_from_age(
-    age_ma, lambda238 = LAMBDA_238, lambda235 = LAMBDA_235, u238_u235 = U238_U235
+    age_ma, lambda238=LAMBDA_238, lambda235=LAMBDA_235, u238_u235=U238_U235
 ):
-    age = np.asarray(age_ma, dtype = float)
+    age = np.asarray(age_ma, dtype=float)
     years = age * 1e6
-    with np.errstate(over = "ignore", divide = "ignore", invalid = "ignore"):
+    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
         ratio = np.expm1(lambda235 * years) / np.expm1(lambda238 * years) / u238_u235
     zero_limit = lambda235 / lambda238 / u238_u235
     return np.where(np.abs(years) < 1.0, zero_limit, ratio)
 
 
-def ratio75_from_76_68(ratio76, ratio68, u238_u235 = U238_U235):
+def ratio75_from_76_68(ratio76, ratio68, u238_u235=U238_U235):
     return (
-        np.asarray(ratio76, dtype = float) * np.asarray(ratio68, dtype = float) * u238_u235
+        np.asarray(ratio76, dtype=float) * np.asarray(ratio68, dtype=float) * u238_u235
     )
 
 
 def age_from_ratio(
-    ratio, system, lambda238 = LAMBDA_238, lambda235 = LAMBDA_235, u238_u235 = U238_U235
+    ratio, system, lambda238=LAMBDA_238, lambda235=LAMBDA_235, u238_u235=U238_U235
 ):
-    ratio = np.asarray(ratio, dtype = float)
+    ratio = np.asarray(ratio, dtype=float)
     if system == "68":
         age = np.log1p(ratio) / lambda238 / 1e6
     elif system == "75":
@@ -37,7 +34,7 @@ def age_from_ratio(
     elif system == "76":
         grid = np.linspace(0, 4600, 18401)
         model = ratio76_from_age(grid, lambda238, lambda235, u238_u235)
-        age = np.interp(ratio, model, grid, left = np.nan, right = np.nan)
+        age = np.interp(ratio, model, grid, left=np.nan, right=np.nan)
     else:
         raise ValueError("system must be '68', '75', or '76'")
     return np.where(np.isfinite(age) & (age >= 0) & (age <= 4600), age, np.nan)
@@ -47,12 +44,12 @@ def age_uncertainty(
     ratio,
     sigma_ratio,
     system,
-    lambda238 = LAMBDA_238,
-    lambda235 = LAMBDA_235,
-    u238_u235 = U238_U235,
+    lambda238=LAMBDA_238,
+    lambda235=LAMBDA_235,
+    u238_u235=U238_U235,
 ):
-    ratio = np.asarray(ratio, dtype = float)
-    sigma = np.asarray(sigma_ratio, dtype = float)
+    ratio = np.asarray(ratio, dtype=float)
+    sigma = np.asarray(sigma_ratio, dtype=float)
     if system == "68":
         return sigma / (lambda238 * (1 + ratio)) / 1e6
     if system == "75":
@@ -68,25 +65,14 @@ def age_uncertainty(
     return np.divide(
         sigma,
         np.abs(derivative),
-        out = np.full_like(sigma, np.nan),
-        where = np.abs(derivative) > 0,
+        out=np.full_like(sigma, np.nan),
+        where=np.abs(derivative) > 0,
     )
 
 
-def rho_from_quotient_errors(relative_r75, relative_r68, relative_r76):
-    u = np.asarray(relative_r75, dtype = float)
-    v = np.asarray(relative_r68, dtype = float)
-    q = np.asarray(relative_r76, dtype = float)
-    with np.errstate(divide = "ignore", invalid = "ignore"):
-        rho = (u**2 + v**2 - q**2) / (2 * u * v)
-    return np.where(
-        np.isfinite(rho) & (np.abs(rho) <= 1.000001), np.clip(rho, -1, 1), np.nan
-    )
-
-
-def weighted_mean(ages, sigma_1s, expand_for_overdispersion = False):
-    ages = np.asarray(ages, dtype = float)
-    sigma = np.asarray(sigma_1s, dtype = float)
+def weighted_mean(ages, sigma_1s, expand_for_overdispersion=False):
+    ages = np.asarray(ages, dtype=float)
+    sigma = np.asarray(sigma_1s, dtype=float)
     valid = np.isfinite(ages) & np.isfinite(sigma) & (sigma > 0)
     ages, sigma = ages[valid], sigma[valid]
     if not ages.size:
@@ -111,18 +97,7 @@ def weighted_mean(ages, sigma_1s, expand_for_overdispersion = False):
     }
 
 
-def concordia_curve(max_age_ma = 4600, points = 1200):
+def concordia_curve(max_age_ma=4600, points=1200):
     age = np.linspace(0, max_age_ma, points)
     years = age * 1e6
     return age, np.expm1(LAMBDA_238 * years), np.expm1(LAMBDA_235 * years)
-
-
-
-
-
-
-
-
-
-
-
