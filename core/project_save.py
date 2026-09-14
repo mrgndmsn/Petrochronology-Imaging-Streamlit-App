@@ -41,6 +41,7 @@ def project_save_ui():
         st.session_state.pop("prepared_project_download", None)
         try:
             with st.spinner("Preparing project snapshot…"):
+                status = st.empty()
                 state = st.session_state
                 data = save_project(
                     state.layers,
@@ -52,6 +53,7 @@ def project_save_ui():
                     state.calculation_definitions,
                     state.mineral_colors,
                     capture_tab_settings(state),
+                    progress=status.caption,
                 )
             st.session_state.prepared_project_download = (
                 data,
