@@ -87,6 +87,7 @@ figure.update_layout(
     yaxis_title="Y (µm)",
     legend_title="Mineral",
     meta={
+        "equal_scale_default": False,
         "map_layer_key": "overlay::" + "|".join(sorted(mineral_points)),
         "dataset_identities": [[l.sample_id, l.mineral_id, l.run_id] for l in layers],
     },
