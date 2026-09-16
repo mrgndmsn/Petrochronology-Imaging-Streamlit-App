@@ -375,6 +375,22 @@ with tab_pca:
             custom_data=[ROW_ID],
             template="plotly_white",
         )
+        if "PC2" in scores and st.checkbox(
+            "Show PCA loading arrows", value=True, key="pca_score_arrows"
+        ):
+            arrow_count = st.number_input(
+                "Loading arrows to show",
+                1,
+                len(loadings),
+                min(10, len(loadings)),
+                key="pca_score_arrow_count",
+            )
+            arrows = pca_biplot(scores, loadings, variance, top_labels=int(arrow_count))
+            score_figure.update_layout(
+                annotations=arrows.layout.annotations,
+                xaxis_title=arrows.layout.xaxis.title.text,
+                yaxis_title=arrows.layout.yaxis.title.text,
+            )
         score_figure.update_layout(dragmode="lasso")
         score_event = render_chart(
             score_figure,
