@@ -106,10 +106,12 @@ def exclude_pixels(
                     any(c in frame for c in ("grain_id", "n_pixels", "value_mean")),
                     bool,
                 )
-            if scope == "Selected channel only" and reference.channel in frame:
-                changed = frame.copy()
-                changed.loc[same & selected, reference.channel] = np.nan
-                collection[key] = changed
+            if scope == "Selected channel only":
+                if reference.channel in frame:
+                    changed = frame.copy()
+                    changed.loc[same & selected, reference.channel] = np.nan
+                    collection[key] = changed
+                # Tables containing other channels retain their rows and values.
             else:
                 collection[key] = frame.loc[~(same & selected)].copy()
     for key, result in list(grain_results.items()):
