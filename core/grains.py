@@ -21,6 +21,17 @@ class GrainSettings:
 
 def make_mask(values: np.ndarray, settings: GrainSettings) -> np.ndarray:
     values = np.asarray(values, dtype=float)
+    if settings.rule not in {
+        "finite",
+        "greater_than_zero",
+        "less_than",
+        "greater_than",
+    }:
+        raise ValueError("Unknown grain threshold rule.")
+    if settings.rule in {"less_than", "greater_than"} and not np.isfinite(
+        settings.threshold
+    ):
+        raise ValueError("Grain threshold must be finite.")
     if settings.rule == "finite":
         mask = np.isfinite(values)
     elif settings.rule == "greater_than_zero":
