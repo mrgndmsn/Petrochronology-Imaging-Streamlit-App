@@ -13,6 +13,9 @@ from core.state import initialize_state
 
 st.set_page_config(page_title="Map and grains", page_icon="🗺️", layout="wide")
 initialize_state()
+st.caption(
+    "Threshold comparisons use strict < or >. Hole filling and gap bridging modify that initial mask and can include pixels that did not pass the threshold; turn both off to detect only threshold-passing pixels."
+)
 st.title("Grain detection")
 st.caption(
     "Detect grains here, then use Editing and radial above to split, merge, or move centers. Cyan ellipses, white center crosses, and grain numbers appear on the map."
