@@ -157,9 +157,13 @@ def render_chart(figure, **kwargs):
             key=f"{chart_key}_equal_scale_v2",
             help="Turn off to zoom to any rectangular range. Unequal scales distort grain shapes visually.",
         )
+        axis_direction = (
+            figure.layout.xaxis.autorange == "reversed",
+            figure.layout.yaxis.autorange == "reversed",
+        )
         fixed_map_window(figure, lock)
         figure.update_layout(
-            uirevision=f"data-fit-v3:{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key, 0)}:{lock}"
+            uirevision=f"data-fit-v3:{identity}:{map_extent_signature(figure)}:{st.session_state.get(epoch_key, 0)}:{lock}:{axis_direction}"
         )
     else:
         figure.update_layout(uirevision=str(chart_key))
