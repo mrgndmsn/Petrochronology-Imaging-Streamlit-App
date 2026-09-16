@@ -47,6 +47,14 @@ def snapshot():
 
 
 def invalidate_histories():
+    for key in list(st.session_state):
+        if key in {
+            "pca_output",
+            "pca_source",
+            "pca_pixel_source",
+            "active_map_highlight",
+        } or key.startswith("linked_plot_pixels::"):
+            st.session_state.pop(key, None)
     st.session_state.grain_history = {}
     st.session_state.table_history = {}
     st.session_state.selection_history = []
