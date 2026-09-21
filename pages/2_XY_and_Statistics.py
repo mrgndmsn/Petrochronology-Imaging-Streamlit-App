@@ -248,10 +248,6 @@ with tab_kde:
     outliers = st.checkbox("Filter outliers by IQR", key="kde_iqr")
     if outliers:
         kde_frame = iqr_filter(kde_frame, [value])
-    if log:
-        values = pd.to_numeric(kde_frame[value], errors="coerce")
-        kde_frame = kde_frame.loc[values > 0].copy()
-        kde_frame[value] = np.log10(pd.to_numeric(kde_frame[value], errors="coerce"))
     bandwidth = st.number_input("KDE bandwidth multiplier", min_value=0.05, value=1.0)
     kde_summary = st.selectbox("KDE observations", ["Raw rows", "Means per unit"])
     if kde_summary == "Means per unit":
@@ -276,6 +272,10 @@ with tab_kde:
             )
         else:
             st.warning("This table has no grain, selection, or profile unit column.")
+    if log:
+        values = pd.to_numeric(kde_frame[value], errors="coerce")
+        kde_frame = kde_frame.loc[values > 0].copy()
+        kde_frame[value] = np.log10(pd.to_numeric(kde_frame[value], errors="coerce"))
     kde_fig = go.Figure()
     curves = []
     groups = (
@@ -308,6 +308,9 @@ with tab_kde:
             "text/csv",
         )
     if group != "None":
+        st.caption(
+            "K-S p-values compare the selected observations and are unadjusted for multiple comparisons. Adjacent pixels may be correlated; use independent grain/domain means when interpreting population differences."
+        )
         comparisons = ks_group_comparisons(kde_frame, value, group)
         st.dataframe(comparisons, width="stretch", hide_index=True)
         st.download_button(
@@ -353,6 +356,37 @@ with tab_pca:
     selected = st.multiselect(
         "Variables", numbers, default=numbers[: min(8, len(numbers))], key="pca_vars"
     )
+    import hashlib
+
+    fingerprint_columns = list(
+        dict.fromkeys(
+            selected
+            + [
+                c
+                for c in (
+                    "sample_id",
+                    "mineral_id",
+                    "run_id",
+                    "selection_id",
+                    "grain_id",
+                    "x",
+                    "y",
+                    "row_index",
+                    "column_index",
+                )
+                if c in frame
+            ]
+        )
+    )
+    fingerprint = hashlib.sha256(
+        repr(fingerprint_columns).encode()
+        + pd.util.hash_pandas_object(
+            frame[fingerprint_columns], index=True
+        ).values.tobytes()
+    ).hexdigest()
+    if st.session_state.get("pca_fingerprint") != fingerprint:
+        st.session_state.pop("pca_output", None)
+        st.session_state.pop("pca_pixel_source", None)
     if st.button("Run PCA"):
         try:
             pca_frame = frame.reset_index(drop=True)
@@ -362,6 +396,7 @@ with tab_pca:
             ].reset_index(drop=True)
             st.session_state["pca_output"] = (scores, loadings, variance)
             st.session_state["pca_source"] = name
+            st.session_state["pca_fingerprint"] = fingerprint
         except Exception as exc:
             st.error(str(exc))
     if "pca_output" in st.session_state and st.session_state.get("pca_source") == name:
@@ -384,6 +419,9 @@ with tab_pca:
                 len(loadings),
                 min(10, len(loadings)),
                 key="pca_score_arrow_count",
+            )
+            st.caption(
+                "Arrows show component directions, scaled to fit the score plot; their plotted length is not a concentration or correlation coefficient."
             )
             arrows = pca_biplot(scores, loadings, variance, top_labels=int(arrow_count))
             score_figure.update_layout(
