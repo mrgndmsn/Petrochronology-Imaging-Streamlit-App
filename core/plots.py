@@ -35,8 +35,13 @@ def map_figure(
         display_values = np.log10(np.where(layer.values > 0, layer.values, np.nan))
         vmin = np.log10(vmin) if vmin is not None and vmin > 0 else None
         vmax = np.log10(vmax) if vmax is not None and vmax > 0 else None
+    rectilinear = True
     if "x_grid" in layer.metadata:
         xx, yy = layer.coordinate_grids()
+        rectilinear = np.allclose(
+            xx, layer.x[None, :], rtol=0, atol=1e-6
+        ) and np.allclose(yy, layer.y[:, None], rtol=0, atol=1e-6)
+    if not rectilinear:
         figure.add_trace(
             go.Scattergl(
                 x=xx.ravel(),
@@ -359,7 +364,11 @@ def _add_grain_centers_and_spokes(
                 shape["grain_length_um"],
                 shape["grain_width_um"],
                 shape["orientation_deg"],
-            ) = major, minor, angle
+            ) = (
+                major,
+                minor,
+                angle,
+            )
         major = float(shape.get("grain_length_um", np.nan))
         minor = float(shape.get("grain_width_um", np.nan))
         angle = np.deg2rad(float(shape.get("orientation_deg", 0.0)))
