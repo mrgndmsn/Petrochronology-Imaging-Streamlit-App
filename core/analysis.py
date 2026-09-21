@@ -23,6 +23,10 @@ def run_pca(frame: pd.DataFrame, columns: list[str], components=4):
         raise ValueError("PCA requires at least three complete rows.")
     if len(columns) < 2:
         raise ValueError("PCA requires at least two variables.")
+    if len(set(columns)) != len(columns):
+        raise ValueError("PCA variables must be distinct.")
+    if not (values.var(ddof=0) > 0).any():
+        raise ValueError("PCA requires variation in at least one variable.")
     scaled = StandardScaler().fit_transform(values)
     count = min(int(components), len(columns), len(values))
     model = PCA(n_components=count).fit(scaled)
@@ -39,7 +43,7 @@ def run_pca(frame: pd.DataFrame, columns: list[str], components=4):
 
 
 def evaluate_equation(frame: pd.DataFrame, equation: str) -> pd.Series:
-    # pandas.eval restricts names to dataframe columns and mathematical operators.
+    # Expressions are evaluated against the selected table using pandas syntax.
     result = frame.eval(equation, engine="python")
     return pd.to_numeric(result, errors="coerce")
 
@@ -63,10 +67,18 @@ def ks_group_comparisons(frame, value_column, group_column):
     rows = []
     groups = list(frame.groupby(group_column, dropna=False))
     for index, (name_a, a) in enumerate(groups):
-        va = pd.to_numeric(a[value_column], errors="coerce").dropna().to_numpy(float)
+        va = (
+            pd.to_numeric(a[value_column], errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .to_numpy(float)
+        )
         for name_b, b in groups[index + 1 :]:
             vb = (
-                pd.to_numeric(b[value_column], errors="coerce").dropna().to_numpy(float)
+                pd.to_numeric(b[value_column], errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+                .dropna()
+                .to_numpy(float)
             )
             if len(va) and len(vb):
                 result = ks_2samp(va, vb)
