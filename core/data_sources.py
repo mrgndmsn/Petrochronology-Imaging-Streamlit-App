@@ -32,8 +32,23 @@ def imported_observations(state):
         ]
     parts = []
     identities = set()
+    raster_identities = {
+        (l.sample_id, l.mineral_id, l.run_id) for l in state.get("layers", {}).values()
+    }
     for name in names:
         frame = tables[name].copy()
+        if name.startswith("Raster channels |") and {
+            "sample_id",
+            "mineral_id",
+            "run_id",
+        }.issubset(frame):
+            # The editable maps are authoritative after collapse, exclusions or column math.
+            mapped = pd.MultiIndex.from_frame(
+                frame[["sample_id", "mineral_id", "run_id"]]
+            ).isin(raster_identities)
+            frame = frame.loc[~mapped].copy()
+            if frame.empty:
+                continue
         frame["source_table"] = name
         parts.append(frame)
         if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
