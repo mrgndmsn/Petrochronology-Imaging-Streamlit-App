@@ -35,7 +35,9 @@ def polygon_mask(layer: MapLayer, vertices):
 
 def circle_mask(layer: MapLayer, x, y, radius_um=0):
     xx, yy = coordinate_grids(layer)
-    radius = max(float(radius_um), 0.5 * min(layer.pixel_size))
+    if not np.isfinite(radius_um) or radius_um < 0:
+        raise ValueError("Spot radius must be finite and nonnegative.")
+    radius = float(radius_um) if radius_um > 0 else 0.5 * min(layer.pixel_size)
     return np.hypot(xx - x, yy - y) <= radius
 
 
@@ -69,7 +71,9 @@ def polyline_distance(layer: MapLayer, points):
 
 def profile_table(layer: MapLayer, points, buffer_um=0):
     distance, along = polyline_distance(layer, points)
-    radius = max(float(buffer_um), 0.5 * min(layer.pixel_size))
+    if not np.isfinite(buffer_um) or buffer_um < 0:
+        raise ValueError("Profile buffer must be finite and nonnegative.")
+    radius = float(buffer_um) if buffer_um > 0 else 0.5 * min(layer.pixel_size)
     mask = distance <= radius
     rows, cols = np.where(mask & np.isfinite(layer.values))
     result = pd.DataFrame(
@@ -115,9 +119,11 @@ def selected_pixel_table(layer: MapLayer, mask, selection_id, kind):
 
 
 def selection_summary(table):
-    values = pd.to_numeric(
-        table.get("value", pd.Series(dtype=float)), errors="coerce"
-    ).dropna()
+    values = (
+        pd.to_numeric(table.get("value", pd.Series(dtype=float)), errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
     return {
         "n_pixels": int(len(table)),
         "n_finite": int(len(values)),
@@ -165,9 +171,9 @@ def split_grain(
 
 def merge_grains(labels, grain_ids):
     labels = np.asarray(labels, dtype=int).copy()
-    ids = [int(v) for v in grain_ids]
-    if len(ids) < 2:
-        raise ValueError("Choose at least two grain IDs.")
+    ids = list(dict.fromkeys(int(v) for v in grain_ids))
+    if len(ids) < 2 or any(v <= 0 for v in ids):
+        raise ValueError("Choose at least two distinct positive grain IDs.")
     if any(not np.any(labels == value) for value in ids):
         raise ValueError("At least one grain ID is absent.")
     labels[np.isin(labels, ids)] = ids[0]
@@ -194,7 +200,12 @@ def nearest_neighbor_stats(points_a, points_b=None):
         return pd.DataFrame(columns=columns)
     distances, indices = cKDTree(b).query(a, k=2 if points_b is None else 1)
     if points_b is None:
-        distances, indices = distances[:, 1], indices[:, 1]
+        # Tied coordinates need not be ordered with the query itself first.
+        choice = np.where(indices[:, 0] == np.arange(len(a)), 1, 0)
+        distances, indices = (
+            distances[np.arange(len(a)), choice],
+            indices[np.arange(len(a)), choice],
+        )
     return pd.DataFrame(
         {
             "source_index": np.arange(len(a)),
@@ -212,11 +223,24 @@ def boundary_buffer_stats(layer: MapLayer, phase_mask, buffer_um):
     mask = np.asarray(phase_mask, bool)
     if mask.shape != layer.values.shape:
         raise ValueError("Phase mask must match the value grid.")
+    if np.isnan(buffer_um) or buffer_um < 0:
+        raise ValueError("Buffer width must be nonnegative.")
     dx, dy = layer.pixel_size
+    regular = "x_grid" not in layer.metadata
+    for axis in (layer.x, layer.y):
+        if len(axis) > 1:
+            steps = np.diff(axis)
+            regular &= bool(
+                np.allclose(steps, steps[0], rtol=0, atol=1e-6) and steps[0] != 0
+            )
+    if len(layer.x) > 1:
+        dx = abs(float(layer.x[1] - layer.x[0]))
+    if len(layer.y) > 1:
+        dy = abs(float(layer.y[1] - layer.y[0]))
     outside_distance = ndimage.distance_transform_edt(~mask, sampling=(dy, dx))
     inside_distance = ndimage.distance_transform_edt(mask, sampling=(dy, dx))
     signed = np.where(mask, -inside_distance, outside_distance)
-    if "x_grid" in layer.metadata and mask.any() and not mask.all():
+    if not regular and mask.any() and not mask.all():
         xx, yy = layer.coordinate_grids()
         xy = np.column_stack((xx.ravel(), yy.ravel()))
         inside = mask.ravel()
