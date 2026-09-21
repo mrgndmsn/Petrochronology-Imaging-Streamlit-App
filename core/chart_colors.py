@@ -6,6 +6,11 @@ from .selection_style import domain_palette, COLORS
 
 
 def category_entries(figure, state):
+    if (
+        isinstance(figure.layout.meta, dict)
+        and figure.layout.meta.get("palette_owner") == "ree"
+    ):
+        return [], "REE colors follow the group-color and palette controls above."
     group = (figure.layout.legend.title.text or "").split(", ")[0]
     domains = domain_palette(state)
     if group in ("Mineral", "mineral_id"):
@@ -105,15 +110,19 @@ def controls(figure, state, prefix, prepared):
                     if isinstance(original, str) and original.startswith("#")
                     else COLORS[i % len(COLORS)]
                 )
-            color = _remembered_input(
+            widget_key = (
+                prefix + "_category_" + hashlib.sha256(key.encode()).hexdigest()[:12]
+            )
+            if state.get(widget_key) != current:
+                state[widget_key] = current
+
+            def commit(category_key=key, control_key=widget_key):
+                registry[category_key] = state[control_key]
+
+            _remembered_input(
                 "chart_colors:66:18",
                 st.color_picker,
                 name,
-                current,
-                key=prefix
-                + "_category_"
-                + hashlib.sha256(key.encode()).hexdigest()[:12],
+                key=widget_key,
+                on_change=commit,
             )
-            if color != current:
-                registry[key] = color
-                st.rerun()
