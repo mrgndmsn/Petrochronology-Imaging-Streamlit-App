@@ -343,16 +343,18 @@ with tab_profile:
         try:
             created = (
                 name,
-                select_geometry("profile", points(raw), "profile", buffer)
-                if sampling == "Buffered pixels"
-                else select_geometry(
-                    "profile",
-                    points(raw),
-                    "profile",
-                    sampling="bilinear"
-                    if sampling.startswith("Bilinear")
-                    else "nearest",
-                    spacing=spacing,
+                (
+                    select_geometry("profile", points(raw), "profile", buffer)
+                    if sampling == "Buffered pixels"
+                    else select_geometry(
+                        "profile",
+                        points(raw),
+                        "profile",
+                        sampling=(
+                            "bilinear" if sampling.startswith("Bilinear") else "nearest"
+                        ),
+                        spacing=spacing,
+                    )
                 ),
             )
         except Exception as exc:
