@@ -18,11 +18,15 @@ def york_fit(x, y, sx, sy, rho=None, max_iterations=100, tolerance=1e-12):
         & np.isfinite(rho)
         & (sx > 0)
         & (sy > 0)
-        & (np.abs(rho) <= 1)
+        & (np.abs(rho) < 1)
     )
     x, y, sx, sy, rho = [v[valid] for v in (x, y, sx, sy, rho)]
     if len(x) < 2:
         raise ValueError("York regression requires at least two valid points.")
+    if np.ptp(x) == 0:
+        raise ValueError("York regression needs variation in X.")
+    if max_iterations < 1 or not np.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError("York iteration limit and tolerance must be positive.")
     b = float(np.polyfit(x, y, 1)[0])
     wx = 1 / sx**2
     wy = 1 / sy**2
@@ -39,6 +43,12 @@ def york_fit(x, y, sx, sy, rho=None, max_iterations=100, tolerance=1e-12):
             b = new_b
             break
         b = new_b
+    else:
+        raise ValueError(
+            "York regression did not converge; inspect the data and uncertainties."
+        )
+    if not np.isfinite(b):
+        raise ValueError("York regression has no finite slope for these data.")
     w = wx * wy / (wx + b * b * wy - 2 * b * rho * alpha)
     xbar = np.sum(w * x) / np.sum(w)
     ybar = np.sum(w * y) / np.sum(w)
@@ -97,6 +107,10 @@ def concordia_date(r68, r75, s68, s75, rho=0):
     values = np.asarray([r68, r75, s68, s75, rho], float)
     if not np.isfinite(values).all() or s68 <= 0 or s75 <= 0:
         raise ValueError("Finite ratios and positive 1σ errors are required.")
+    if abs(rho) >= 1:
+        raise ValueError(
+            "Correlation must be strictly between -1 and 1 for a concordia date."
+        )
     covariance = np.array([[s68**2, rho * s68 * s75], [rho * s68 * s75, s75**2]])
     inverse = np.linalg.pinv(covariance)
 
@@ -122,6 +136,14 @@ def concordia_date(r68, r75, s68, s75, rho=0):
 
 
 def error_ellipse(x, y, sx, sy, rho=0, level=2, n=120):
+    if (
+        not np.isfinite([x, y, sx, sy, rho, level]).all()
+        or min(sx, sy, level) <= 0
+        or abs(rho) > 1
+    ):
+        raise ValueError(
+            "Ellipse inputs require positive errors and scale, and correlation between -1 and 1."
+        )
     covariance = np.array([[sx * sx, rho * sx * sy], [rho * sx * sy, sy * sy]], float)
     eigenvalues, eigenvectors = np.linalg.eigh(covariance)
     order = np.argsort(eigenvalues)[::-1]
