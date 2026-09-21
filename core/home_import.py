@@ -23,7 +23,7 @@ initialize_state()
 st.title("Geochemical Map Analysis")
 st.write(
     "Assign sample, mineral, run, and both pixel sizes explicitly for every import. "
-    "Coordinate columns are physical µm; pixel sizes describe the pixel footprint used for areas and buffers."
+    "Coordinate columns are physical µm; pixel sizes describe the pixel footprint used for areas; boundary distances use physical coordinates."
 )
 
 
@@ -69,6 +69,18 @@ if project_file is not None and st.button("Load complete project"):
                 del st.session_state[widget_key]
         for key, value in restored.items():
             st.session_state[key] = value
+        for transient in (
+            "active_map_highlight",
+            "prepared_project_download",
+            "pca_output",
+            "pca_source",
+            "pca_pixel_source",
+            "pca_fingerprint",
+            "contact_comparison_result",
+            "contact_comparison_settings",
+        ):
+            st.session_state.pop(transient, None)
+        st.session_state.workspace_history = []
         st.session_state.table_history = {}
         st.session_state.grain_history = {}
         st.session_state.selection_history = []
