@@ -211,9 +211,11 @@ def measure_grains(
             element_n=int(finite_values.size),
             element_mean=record["value_mean"],
             element_sd=record["value_sd"],
-            element_cv=record["value_sd"] / record["value_mean"]
-            if record["value_mean"]
-            else np.nan,
+            element_cv=(
+                record["value_sd"] / record["value_mean"]
+                if record["value_mean"]
+                else np.nan
+            ),
         )
         pixel_parts.append(
             pd.DataFrame(
