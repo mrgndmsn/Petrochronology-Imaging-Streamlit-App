@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from io import BytesIO, StringIO
+from io import BytesIO
 from pathlib import Path
 import re
 
@@ -11,12 +11,15 @@ from .models import MapLayer, PointLayer
 
 
 def unique_columns(columns) -> list[str]:
-    counts: dict[str, int] = {}
-    result = []
-    for raw in columns:
-        name = str(raw).strip() or "column"
-        counts[name] = counts.get(name, 0) + 1
-        result.append(name if counts[name] == 1 else f"{name}_{counts[name]}")
+    names = [str(raw).strip() or "column" for raw in columns]
+    reserved, used, result = set(names), set(), []
+    for name in names:
+        candidate, suffix = name, 2
+        while candidate in used or (candidate != name and candidate in reserved):
+            candidate = f"{name}_{suffix}"
+            suffix += 1
+        result.append(candidate)
+        used.add(candidate)
     return result
 
 
@@ -168,9 +171,11 @@ def table_to_layer(
             "coordinates_are_um": coordinates_are_um,
             "pixel_size_x_um": pixel_size_x_um,
             "pixel_size_y_um": pixel_size_y_um,
-            "coordinate_rasterization": "nearest cell; finite mean for collisions"
-            if rasterize_coordinates
-            else "exact grid",
+            "coordinate_rasterization": (
+                "nearest cell; finite mean for collisions"
+                if rasterize_coordinates
+                else "exact grid"
+            ),
         },
     )
 
@@ -186,9 +191,15 @@ def read_sparse_matrix(data: bytes) -> np.ndarray:
 
 
 def read_numeric_matrix(data: bytes) -> np.ndarray:
-    text = data.decode("utf-8-sig", errors="replace")
-    frame = pd.read_csv(StringIO(text), header=None)
-    return frame.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    try:
+        return pd.read_csv(
+            BytesIO(data), header=None, dtype=float, encoding="utf-8-sig"
+        ).to_numpy(dtype=float)
+    except (ValueError, TypeError):
+        frame = pd.read_csv(
+            BytesIO(data), header=None, encoding="utf-8-sig", encoding_errors="replace"
+        )
+        return frame.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
 
 
 def crop_aligned_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
@@ -360,12 +371,20 @@ def matrix_layers(
         y_coordinates = complete_coordinate_grid(y_coordinates, arrays[0].shape)
     row0 = col0 = 0
     if crop:
-        union = np.any(np.isfinite(arrays), axis=0)
+        union = np.zeros(arrays[0].shape, dtype=bool)
+        for array in arrays:
+            union |= np.isfinite(array)
         rr, cc = np.where(union)
         if not len(rr):
             raise ValueError("The stack has no finite pixels.")
         row0, col0 = int(rr.min()), int(cc.min())
         arrays = crop_aligned_matrices(arrays)
+    coordinate_metadata = {}
+    if x_coordinates is not None:
+        height, width = arrays[0].shape
+        xg = x_coordinates[row0 : row0 + height, col0 : col0 + width].copy()
+        yg = y_coordinates[row0 : row0 + height, col0 : col0 + width].copy()
+        coordinate_metadata = dict(x_grid=xg, y_grid=yg, coordinate_reference=True)
     layers = {}
     for (channel, filename, _), values in zip(records, arrays):
         layer = MapLayer(
@@ -373,7 +392,7 @@ def matrix_layers(
             mineral_id,
             run_id,
             str(channel).strip(),
-            values,
+            values.copy(),
             origin_x_um + (col0 + np.arange(values.shape[1])) * dx,
             origin_y_um + (row0 + np.arange(values.shape[0])) * dy,
             {
@@ -385,10 +404,7 @@ def matrix_layers(
             },
         )
         if x_coordinates is not None:
-            height, width = values.shape
-            xg = x_coordinates[row0 : row0 + height, col0 : col0 + width].copy()
-            yg = y_coordinates[row0 : row0 + height, col0 : col0 + width].copy()
-            layer.metadata.update(x_grid=xg, y_grid=yg, coordinate_reference=True)
+            layer.metadata.update(coordinate_metadata)
             layer.x = np.mean(xg, axis=0)
             layer.y = np.mean(yg, axis=1)
         layers[layer.key] = layer
