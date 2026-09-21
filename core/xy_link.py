@@ -245,9 +245,12 @@ def spatial_rows(selected, state):
         parts.append(f)
     if not parts:
         return pd.DataFrame(), unmapped
-    return pd.concat(parts, ignore_index=True, sort=False).drop_duplicates(
-        IDS + ["x", "y"]
-    ), unmapped
+    return (
+        pd.concat(parts, ignore_index=True, sort=False).drop_duplicates(
+            IDS + ["x", "y"]
+        ),
+        unmapped,
+    )
 
 
 def linked_map_ui(selected, state, key_prefix="xy"):
