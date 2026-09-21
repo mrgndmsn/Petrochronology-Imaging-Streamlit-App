@@ -7,7 +7,7 @@ import streamlit as st
 
 def capture_tab_settings(state):
     values = {}
-    for key in state.get("_remembered_widget_keys", []):
+    for key in list(state.get("_remembered_widget_keys", [])):
         if key not in state or key.startswith("import"):
             continue
         value = state[key]
@@ -15,7 +15,13 @@ def capture_tab_settings(state):
             json.dumps(value, allow_nan=False)
         except (TypeError, ValueError):
             continue
-        values[key] = value
+        from .page_memory import portable_widget_key
+
+        values[portable_widget_key(key)] = value
+    # These palettes are data shared by controls, not widget values themselves.
+    for key in ("chart_category_colors", "linked_highlight_style"):
+        if key in state:
+            values[key] = state[key]
     return values
 
 
@@ -23,9 +29,16 @@ def restore_tab_settings(state):
     settings = state.pop("_restored_tab_settings", None)
     if settings is None:
         return
-    for key in state.get("_remembered_widget_keys", []):
+    for key in list(state.get("_remembered_widget_keys", [])):
         state.pop(key, None)
-    state["_remembered_widget_keys"] = list(settings)
+    from .page_memory import portable_widget_key
+
+    settings = {portable_widget_key(k): v for k, v in settings.items()}
+    state["_remembered_widget_keys"] = [
+        k
+        for k in settings
+        if k not in ("chart_category_colors", "linked_highlight_style")
+    ]
     for key, value in settings.items():
         state[key] = value
     state.pop("prepared_project_download", None)
