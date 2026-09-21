@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-@dataclass  # setting up the different properties and layers and data types within the Maplayer to call later
+@dataclass
 class MapLayer:
     sample_id: str
     mineral_id: str
