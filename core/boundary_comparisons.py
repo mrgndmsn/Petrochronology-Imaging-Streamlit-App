@@ -288,19 +288,15 @@ def grain_ui(state, visible_maps):
         "Rim = pixels inside the selected grain within the buffer distance; core = remaining interior pixels. Distance uses the nearest opposite-label pixel center, including other grains. A fully filled map has no observed outside boundary."
     )
     if not sources:
-        st.info("Detect grains on Map and Grains first.")
+        st.info("Choose Grain Analysis → Detect grains first.")
         return
-    source = next(
-        l
-        for l in sources
-        if l.key
-        == _remembered_input(
-            "boundary_comparisons:112:45",
-            st.selectbox,
-            "Grain boundary dataset",
-            [l.key for l in sources],
-        )
+    source_key = _remembered_input(
+        "boundary_comparisons:112:45",
+        st.selectbox,
+        "Grain boundary dataset",
+        [l.key for l in sources],
     )
+    source = next(l for l in sources if l.key == source_key)
     labels = state.grain_results[source.key].labels
     ids = [int(v) for v in np.unique(labels) if v > 0]
     if not ids:
