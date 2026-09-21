@@ -43,6 +43,8 @@ def collect_geometry(
             geometry[1],
             0.5 * min(min(l.pixel_size) for l in layers),
         ]
+    if kind == "profile" and width == 0 and not sampling and layers:
+        width = 0.5 * min(min(l.pixel_size) for l in layers)
     parts = []
     for layer in layers:
         if kind == "profile":
@@ -187,20 +189,36 @@ def map_overlay_figure(
         if color_by == "Mineral":
             r, c = np.where(np.isfinite(layer.values))
             x, y = layer.coordinates_at(r, c)
-            backgrounds.append(
-                go.Scattergl(
-                    x=x,
-                    y=y,
-                    mode="markers",
-                    name=layer.mineral_id,
-                    legendgroup=layer.mineral_id,
-                    meta={"color_by": "mineral_id"},
-                    marker=dict(
-                        color=palette[layer.mineral_id], size=5, symbol="square"
-                    ),
-                    hovertemplate=f"{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<extra></extra>",
+            from .map_highlight import _raster_highlight
+
+            raster = go.Figure()
+            if len(r) and _raster_highlight(
+                raster,
+                pd.DataFrame({"x": x, "y": y}),
+                *layer.pixel_size,
+                layer.mineral_id,
+                palette[layer.mineral_id],
+                1.0,
+            ):
+                raster.data[0].update(
+                    legendgroup=layer.mineral_id, meta={"color_by": "mineral_id"}
                 )
-            )
+                backgrounds.append(raster.data[0])
+            else:
+                backgrounds.append(
+                    go.Scattergl(
+                        x=x,
+                        y=y,
+                        mode="markers",
+                        name=layer.mineral_id,
+                        legendgroup=layer.mineral_id,
+                        meta={"color_by": "mineral_id"},
+                        marker=dict(
+                            color=palette[layer.mineral_id], size=5, symbol="square"
+                        ),
+                        hovertemplate=f"{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<extra></extra>",
+                    )
+                )
         else:
             backgrounds.append(current.data[0])
         # Mineral pixels use WebGL. Keep decorations in the same renderer so
