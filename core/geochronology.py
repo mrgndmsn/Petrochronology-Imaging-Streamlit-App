@@ -28,9 +28,11 @@ def age_from_ratio(
 ):
     ratio = np.asarray(ratio, dtype=float)
     if system == "68":
-        age = np.log1p(ratio) / lambda238 / 1e6
+        with np.errstate(invalid="ignore", divide="ignore"):
+            age = np.log1p(ratio) / lambda238 / 1e6
     elif system == "75":
-        age = np.log1p(ratio) / lambda235 / 1e6
+        with np.errstate(invalid="ignore", divide="ignore"):
+            age = np.log1p(ratio) / lambda235 / 1e6
     elif system == "76":
         grid = np.linspace(0, 4600, 18401)
         model = ratio76_from_age(grid, lambda238, lambda235, u238_u235)
@@ -48,26 +50,28 @@ def age_uncertainty(
     lambda235=LAMBDA_235,
     u238_u235=U238_U235,
 ):
-    ratio = np.asarray(ratio, dtype=float)
-    sigma = np.asarray(sigma_ratio, dtype=float)
-    if system == "68":
-        return sigma / (lambda238 * (1 + ratio)) / 1e6
-    if system == "75":
-        return sigma / (lambda235 * (1 + ratio)) / 1e6
-    if system != "76":
-        raise ValueError("system must be '68', '75', or '76'")
-    age = age_from_ratio(ratio, "76", lambda238, lambda235, u238_u235)
-    step = 1e-3
-    derivative = (
-        ratio76_from_age(age + step, lambda238, lambda235, u238_u235)
-        - ratio76_from_age(age - step, lambda238, lambda235, u238_u235)
-    ) / (2 * step)
-    return np.divide(
-        sigma,
-        np.abs(derivative),
-        out=np.full_like(sigma, np.nan),
-        where=np.abs(derivative) > 0,
+    ratio, sigma = np.broadcast_arrays(
+        np.asarray(ratio, float), np.asarray(sigma_ratio, float)
     )
+    age = age_from_ratio(ratio, system, lambda238, lambda235, u238_u235)
+    valid = np.isfinite(age) & np.isfinite(sigma) & (sigma >= 0)
+    if system in ("68", "75"):
+        decay = lambda238 if system == "68" else lambda235
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result = sigma / (decay * (1 + ratio)) / 1e6
+    else:
+        step = 1e-3
+        derivative = (
+            ratio76_from_age(age + step, lambda238, lambda235, u238_u235)
+            - ratio76_from_age(age - step, lambda238, lambda235, u238_u235)
+        ) / (2 * step)
+        result = np.divide(
+            sigma,
+            np.abs(derivative),
+            out=np.full_like(sigma, np.nan),
+            where=np.abs(derivative) > 0,
+        )
+    return np.where(valid & np.isfinite(result), result, np.nan)
 
 
 def weighted_mean(ages, sigma_1s, expand_for_overdispersion=False):
