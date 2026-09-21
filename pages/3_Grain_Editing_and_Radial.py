@@ -84,22 +84,9 @@ def replace_labels(labels):
     updated.shape_table = grain_summary_all_channels(
         layer, updated, st.session_state.layers
     )
-    from core.workspace import invalidate_dataset_products
+    from core.workspace import store_grain_result
 
-    invalidate_dataset_products(
-        layer,
-        st.session_state.tables,
-        st.session_state.selections,
-        st.session_state.grain_results,
-        st.session_state.manual_grain_centers,
-    )
-    st.session_state.grain_results[key] = updated
-    st.session_state.tables[
-        f"Grain means | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-    ] = updated.shape_table
-    st.session_state.tables[
-        f"Grain pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-    ] = updated.pixel_table
+    store_grain_result(st.session_state, layer, updated)
 
 
 def clicked_xy(event):
@@ -274,8 +261,15 @@ with tab_center:
         "Center input", ["Map click", "Typed coordinates"], horizontal=True
     )
     c = st.columns(2)
-    cx = c[0].number_input("Center X (µm)", value=float(row.centroid_x_um))
-    cy = c[1].number_input("Center Y (µm)", value=float(row.centroid_y_um))
+    saved_center = st.session_state.manual_grain_centers.get(
+        center_key, [float(row.ellipse_center_x_um), float(row.ellipse_center_y_um)]
+    )
+    cx = c[0].number_input(
+        "Center X (µm)", value=saved_center[0], key=center_key + "_typed_x"
+    )
+    cy = c[1].number_input(
+        "Center Y (µm)", value=saved_center[1], key=center_key + "_typed_y"
+    )
     center_key = f"{key}::{gid}"
     if st.button(
         "Save moved center",
@@ -319,6 +313,12 @@ with tab_radial:
     )
     render_chart(spoke_map, width="stretch", key=f"radial_spoke_map::{key}")
     full_ellipse = st.checkbox("Include all pixels inside fitted ellipse", True)
+    if not chosen:
+        st.info("Select one or more grains to calculate radial profiles.")
+        st.stop()
+    if core >= rim:
+        st.error("The core cutoff must be smaller than the rim cutoff.")
+        st.stop()
     radial = ellipse_radial_table(
         layer,
         result,
