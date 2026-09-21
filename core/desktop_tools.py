@@ -115,6 +115,10 @@ def profile_envelope(
     frame, x, values, group, bins, envelope, positive_only=True, robust=True
 ):
     work = frame.copy()
+    work[x] = pd.to_numeric(work[x], errors="coerce").replace([np.inf, -np.inf], np.nan)
+    work = work.dropna(subset=[x])
+    if work.empty:
+        return pd.DataFrame()
     work["_bin"] = pd.cut(
         pd.to_numeric(work[x], errors="coerce"),
         int(bins),
@@ -126,7 +130,11 @@ def profile_envelope(
     for identity, subset in work.groupby(keys, dropna=False):
         identity = identity if isinstance(identity, tuple) else (identity,)
         for column in values:
-            data = pd.to_numeric(subset[column], errors="coerce").dropna()
+            data = (
+                pd.to_numeric(subset[column], errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+                .dropna()
+            )
             if positive_only:
                 data = data[data > 0]
             if robust and len(data) >= 8:
@@ -159,86 +167,91 @@ def profile_envelope(
     return pd.DataFrame(rows)
 
 
-def _rho_identity(relative_a, relative_b, relative_product):
-    denominator = 2 * relative_a * relative_b
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rho = (relative_a**2 + relative_b**2 - relative_product**2) / denominator
-    return np.clip(rho, -1, 1) if np.isfinite(rho) else np.nan
-
-
 def grouped_upb_means(
     frame, group_columns, ratio_columns, ratio_method="Mean of pixel ratios"
 ):
-    rows = []
+    """Paired arithmetic means and covariance of means; errors are sample SEMs.
+
+    For three ratios, the order is 206Pb/238U, 207Pb/235U, 207Pb/206Pb.
+    Product mode propagates the covariance of the two factor means.
+    """
+    if len(set(ratio_columns)) != len(ratio_columns):
+        raise ValueError("Ratio columns must be distinct.")
+    if ratio_method not in ("Mean of pixel ratios", "Ratio of means/product"):
+        raise ValueError("Unknown ratio averaging method.")
     groups = (
         frame.groupby(group_columns, dropna=False)
         if group_columns
         else [("All data", frame)]
     )
+    rows = []
     for identity, subset in groups:
         identity = identity if isinstance(identity, tuple) else (identity,)
         row = dict(zip(group_columns, identity))
-        row["n"] = len(subset)
-        numeric = {c: pd.to_numeric(subset[c], errors="coerce") for c in ratio_columns}
-        for column, values in numeric.items():
-            row[column] = values.mean()
-            row[f"{column}_1se_internal"] = values.std() / np.sqrt(values.count())
+        numeric = (
+            subset[ratio_columns]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+        )
+        product = ratio_method == "Ratio of means/product" and len(ratio_columns) >= 3
+        required = [ratio_columns[0], ratio_columns[2]] if product else ratio_columns
+        numeric = numeric.dropna(subset=required)
+        n = len(numeric)
+        row.update(n=n, n_input=len(subset), ratio_average=ratio_method)
+        means = numeric.mean()
+        covariance = (
+            numeric.cov() / n
+            if n > 1
+            else pd.DataFrame(np.nan, index=ratio_columns, columns=ratio_columns)
+        )
+        for column in ratio_columns:
+            row[column] = means[column]
+            row[f"{column}_1se_internal"] = np.sqrt(covariance.loc[column, column])
+
+        def correlation(cov, sx, sy):
+            return (
+                float(np.clip(cov / (sx * sy), -1, 1))
+                if np.isfinite([cov, sx, sy]).all() and sx > 0 and sy > 0
+                else np.nan
+            )
+
         if len(ratio_columns) >= 3:
             r68, r75, r76 = ratio_columns[:3]
-            n = min(numeric[r68].count(), numeric[r75].count(), numeric[r76].count())
-            r75_values = numeric[r75]
-            if ratio_method == "Ratio of means/product":
-                row[r75] = row[r68] * row[r76] * 137.818
-                r75_values = numeric[r68] * numeric[r76] * 137.818
-            inverse_68 = 1 / numeric[r68].replace(0, np.nan)
-            covariance_68_76 = numeric[r68].cov(numeric[r76]) / max(1, n)
-            s68 = row[f"{r68}_1se_internal"]
-            s75 = row[f"{r75}_1se_internal"]
-            s76 = row[f"{r76}_1se_internal"]
-            if ratio_method == "Ratio of means/product":
-                variance_75 = 137.818**2 * (
-                    row[r76] ** 2 * s68**2
-                    + row[r68] ** 2 * s76**2
-                    + 2 * row[r68] * row[r76] * covariance_68_76
+            c68_76 = covariance.loc[r68, r76]
+            c_w = covariance.loc[r68, r75]
+            if product:
+                a, b = means[r68], means[r76]
+                row[r75] = 137.818 * a * b
+                variance = 137.818**2 * (
+                    b * b * covariance.loc[r68, r68]
+                    + a * a * covariance.loc[r76, r76]
+                    + 2 * a * b * c68_76
                 )
-                s75 = np.sqrt(variance_75) if variance_75 >= 0 else np.nan
-                row[f"{r75}_1se_internal"] = s75
-            covariance_w = r75_values.cov(numeric[r68]) / max(1, n)
-            covariance_tw = inverse_68.cov(numeric[r76]) / max(1, n)
-            s86 = inverse_68.std() / np.sqrt(inverse_68.count())
-            row["direct_covariance_wetherill_mean"] = covariance_w
-            row["direct_covariance_tw_mean"] = covariance_tw
-            row["rho_wetherill_direct"] = (
-                covariance_w / (s75 * s68) if s75 and s68 else np.nan
+                row[f"{r75}_1se_internal"] = (
+                    np.sqrt(max(0.0, variance)) if np.isfinite(variance) else np.nan
+                )
+                c_w = 137.818 * (b * covariance.loc[r68, r68] + a * c68_76)
+            s68, s75, s76 = [row[f"{c}_1se_internal"] for c in (r68, r75, r76)]
+            # Tera–Wasserburg transforms the group mean, not each individual pixel.
+            s86 = s68 / means[r68] ** 2 if means[r68] != 0 else np.nan
+            c_tw = -c68_76 / means[r68] ** 2 if means[r68] != 0 else np.nan
+            row.update(
+                direct_covariance_wetherill_mean=c_w,
+                direct_covariance_tw_mean=c_tw,
+                rho_wetherill_direct=correlation(c_w, s75, s68),
+                rho_tw_direct=correlation(c_tw, s86, s76),
+                rho_68_76_direct=correlation(c68_76, s68, s76),
             )
-            row["rho_tw_direct"] = (
-                covariance_tw / (s86 * s76) if s86 and s76 else np.nan
-            )
-            row["rho_68_76_direct"] = (
-                covariance_68_76 / (s68 * s76) if s68 and s76 else np.nan
-            )
-            rel68 = s68 / row[r68] if row[r68] else np.nan
-            rel75 = s75 / row[r75] if row[r75] else np.nan
-            rel76 = s76 / row[r76] if row[r76] else np.nan
-            fallback_w = _rho_identity(rel75, rel68, rel76)
-            row["rho_wetherill"] = (
-                row["rho_wetherill_direct"]
-                if np.isfinite(row["rho_wetherill_direct"])
-                else fallback_w
-            )
-            row["rho_68_76"] = (
-                row["rho_68_76_direct"] if np.isfinite(row["rho_68_76_direct"]) else 0.0
-            )
+            row["rho_wetherill"] = row["rho_wetherill_direct"]
+            row["rho_68_76"] = row["rho_68_76_direct"]
             row["rho_direct"] = row["rho_wetherill"]
-            row["ratio_average"] = ratio_method
-        elif len(ratio_columns) >= 2:
-            covariance = numeric[ratio_columns[0]].cov(numeric[ratio_columns[1]]) / max(
-                1, len(subset)
+        elif len(ratio_columns) == 2:
+            a, b = ratio_columns
+            c = covariance.loc[a, b]
+            row["direct_covariance_mean"] = c
+            row["rho_direct"] = correlation(
+                c, row[f"{a}_1se_internal"], row[f"{b}_1se_internal"]
             )
-            sx = row[f"{ratio_columns[0]}_1se_internal"]
-            sy = row[f"{ratio_columns[1]}_1se_internal"]
-            row["direct_covariance_mean"] = covariance
-            row["rho_direct"] = covariance / (sx * sy) if sx and sy else np.nan
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -286,13 +299,14 @@ def mineral_nearest_neighbor_tables(layers, maximum=5000):
             .dropna()
             .to_numpy(float)
         )
-        if len(xy) > maximum:
-            xy = xy[rng.choice(len(xy), int(maximum), replace=False)]
         groups.setdefault((layer.sample_id, layer.run_id), {})[layer.mineral_id] = xy
     parts = []
     summaries = []
     for (sample, run), minerals in groups.items():
-        for source, a in minerals.items():
+        for source, full_a in minerals.items():
+            a = full_a
+            if len(a) > maximum:
+                a = a[rng.choice(len(a), int(maximum), replace=False)]
             for target, b in minerals.items():
                 if source == target:
                     continue
@@ -315,6 +329,8 @@ def mineral_nearest_neighbor_tables(layers, maximum=5000):
                         info,
                         n_from_sampled=len(a),
                         n_to_sampled=len(b),
+                        n_from_total=len(full_a),
+                        n_to_total=len(b),
                         mean_nn_distance_um=d.mean(),
                         median_nn_distance_um=d.median(),
                         sd_nn_distance_um=d.std(),
