@@ -51,6 +51,8 @@ def apply_mineral_colors(figure, palette):
         ):
             name = str(trace.name or "").split(", ")[0]
             if name in palette:
+                if trace.type == "heatmap":
+                    trace.colorscale = [[0, palette[name]], [1, palette[name]]]
                 if hasattr(trace, "marker"):
                     trace.marker.color = palette[name]
                 if hasattr(trace, "line"):
