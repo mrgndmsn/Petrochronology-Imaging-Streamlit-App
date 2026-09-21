@@ -8,7 +8,7 @@ from core.exports import render_chart
 from core.io import safe_filename
 from core.state import initialize_state
 
-st.set_page_config(page_title="Map and grains", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Maps", page_icon="🗺️", layout="wide")
 initialize_state()
 st.title("Maps")
 from core.selection_maps import map_overlay_figure
@@ -41,11 +41,23 @@ st.caption(
     f"{len(visible)} datasets overlaid for {channel}. Filters control the visible maps. Only overlay samples with comparable physical coordinates."
 )
 
-controls, display = st.columns([1, 3])
-with controls:
+with st.expander("Map display controls", expanded=True):
     st.subheader("Display")
-    vmin = st.number_input("Color minimum", value=float(np.nanpercentile(finite, 2)))
-    vmax = st.number_input("Color maximum", value=float(np.nanpercentile(finite, 98)))
+    log_color = st.checkbox("Log10 color scale (positive values only)")
+    color_values = finite[finite > 0] if log_color else finite
+    if not len(color_values):
+        st.info("This channel has no positive values for logarithmic colors.")
+        st.stop()
+    vmin = st.number_input(
+        "Color minimum",
+        value=float(np.percentile(color_values, 2)),
+        key=f"map_color_min::{channel}::{log_color}",
+    )
+    vmax = st.number_input(
+        "Color maximum",
+        value=float(np.percentile(color_values, 98)),
+        key=f"map_color_max::{channel}::{log_color}",
+    )
     invert_x = st.checkbox("Invert X axis")
     invert_y = st.checkbox("Invert Y axis")
     colorscale = st.selectbox(
@@ -53,7 +65,6 @@ with controls:
         ["Viridis", "Turbo", "Plasma", "Inferno", "Magma", "Cividis", "RdBu", "Jet"],
     )
     show_colorbar = st.checkbox("Show color bar", True)
-    log_color = st.checkbox("Log10 color scale (positive values only)")
     scale_bar = st.number_input(
         "Scale bar length (µm; 0 hides)", min_value=0.0, value=0.0
     )
@@ -62,9 +73,12 @@ with controls:
     scale_position = st.selectbox(
         "Scale bar position", ["Bottom left", "Bottom right", "Top left", "Top right"]
     )
+    if vmin > vmax or (log_color and min(vmin, vmax) <= 0):
+        st.error("Color bounds must increase and be positive on a logarithmic scale.")
+        st.stop()
     show_spokes = 0
 
-with display:
+with st.container():
     selection_overlays = (
         {
             name: t
