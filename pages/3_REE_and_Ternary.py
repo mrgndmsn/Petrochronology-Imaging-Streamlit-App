@@ -48,7 +48,9 @@ with tab_ree:
         candidates = [
             c
             for c in numbers
-            if re.search(rf"(?<![A-Za-z])(?:\d+)?{element}(?=\d|\b|_)", str(c), re.I)
+            if re.search(
+                rf"(?<![A-Za-z])(?:\d+)?{element}(?=Total|\d|\b|_)", str(c), re.I
+            )
             and not re.search(r"Int2SE|error|sigma|_sd|_n$|age", str(c), re.I)
         ]
         guess = (
@@ -71,9 +73,9 @@ with tab_ree:
     group = st.selectbox(
         "Group/color",
         ["None"] + list(frame.columns),
-        index=1 + list(frame.columns).index("dataset_id")
-        if "dataset_id" in frame
-        else 0,
+        index=(
+            1 + list(frame.columns).index("dataset_id") if "dataset_id" in frame else 0
+        ),
         key="ree_group",
     )
     envelope_labels = {
@@ -236,7 +238,9 @@ with tab_ree:
                         for v in (ymin, ymax)
                     ]
                 )
-        fig.update_layout(template="plotly_white", height=650)
+        fig.update_layout(
+            template="plotly_white", height=650, meta={"palette_owner": "ree"}
+        )
         render_chart(fig, width="stretch", key="ree_figure")
         if st.button("Prepare normalized REE download"):
             if norm is None:
