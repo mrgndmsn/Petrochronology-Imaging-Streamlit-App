@@ -104,13 +104,10 @@ if run:
             result.pixel_table = grain_pixels_all_channels(
                 current, result, st.session_state.layers
             )
-            st.session_state.grain_results[current.key] = result
-            table_name = f"Grain means | {current.key}"
-            st.session_state.tables[table_name] = result.shape_table
-            st.session_state.tables[f"Grain pixels | {current.key}"] = (
-                result.pixel_table
-            )
-            st.session_state.active_table_name = table_name
+            from core.workspace import store_grain_result
+
+            store_grain_result(st.session_state, current, result)
+            st.session_state.active_table_name = f"Grain means | {current.key}"
 
 with display:
     selection_overlays = filtered_saved_selections(st.session_state.selections, visible)
