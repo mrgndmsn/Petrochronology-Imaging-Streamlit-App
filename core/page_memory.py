@@ -23,6 +23,15 @@ INPUTS = {
 }
 
 
+def portable_widget_key(key):
+    """Keep implicit control identities independent of install path and line edits."""
+    import re
+
+    return re.sub(
+        r"^input::.*?((?:core|pages)/[^:]+\.py):\d+:\d+::", r"input::\1::", key
+    )
+
+
 def preserve_widget_state():
     # Reassigning a keyed widget value detaches it from Streamlit's cleanup for
     # this run. Do this before rendering any widgets, including navigation.
@@ -129,7 +138,8 @@ def run_page(path):
         # Include the displayed label and occurrence, not only its line number.
         if "key" not in kwargs:
             label = str(kwargs.get("label", args[0] if args else ""))
-            base = identity + "::" + label
+            relative = "/".join(Path(path).parts[-2:])
+            base = relative + "::" + label
             count = calls.get(base, 0)
             calls[base] = count + 1
             identity = base + "::" + str(count)
