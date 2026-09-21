@@ -30,7 +30,10 @@ with st.container():
         palette[mineral] = st.color_picker(
             mineral, palette[mineral], key=f"mineral_color::{mineral}"
         )
-size = st.slider("Marker size", 1, 12, 3)
+size = st.slider("Point marker size", 1, 12, 3)
+st.caption(
+    "Aligned raster maps use physical pixel footprints; marker size applies to point layers."
+)
 opacity = st.slider("Opacity", 0.05, 1.0, 0.7)
 figure = go.Figure()
 summary = []
@@ -47,20 +50,41 @@ for index, layer in enumerate(layers):
         pd.to_numeric(frame[layer.x_column], errors="coerce")
     ) & np.isfinite(pd.to_numeric(frame[layer.y_column], errors="coerce"))
     shown = frame.loc[present]
-    figure.add_trace(
-        go.Scattergl(
-            x=shown[layer.x_column],
-            y=shown[layer.y_column],
-            mode="markers",
-            marker={
-                "size": size,
-                "color": palette[layer.mineral_id],
-                "opacity": opacity,
-            },
-            name=layer.mineral_id,
-            hovertemplate=f"{layer.mineral_id}<br>x=%{{x:.3f}}<br>y=%{{y:.3f}}<extra></extra>",
+    from core.map_highlight import _raster_highlight
+
+    raster = False
+    source = st.session_state.layers.get(layer.metadata.get("source_map"))
+    if source is not None and len(shown):
+        coordinates = pd.DataFrame(
+            {"x": shown[layer.x_column], "y": shown[layer.y_column]}
         )
-    )
+        raster = _raster_highlight(
+            figure,
+            coordinates,
+            *source.pixel_size,
+            layer.mineral_id,
+            palette[layer.mineral_id],
+            opacity,
+        )
+    if raster:
+        figure.data[-1].update(
+            legendgroup=layer.mineral_id, meta={"color_by": "mineral_id"}
+        )
+    else:
+        figure.add_trace(
+            go.Scattergl(
+                x=shown[layer.x_column],
+                y=shown[layer.y_column],
+                mode="markers",
+                marker={
+                    "size": size,
+                    "color": palette[layer.mineral_id],
+                    "opacity": opacity,
+                },
+                name=layer.mineral_id,
+                hovertemplate=f"{layer.mineral_id}<br>x=%{{x:.3f}}<br>y=%{{y:.3f}}<extra></extra>",
+            )
+        )
     summary.append(
         {
             "mineral": layer.mineral_id,
