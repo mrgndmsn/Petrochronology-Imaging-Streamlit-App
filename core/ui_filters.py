@@ -30,9 +30,9 @@ def filter_table_ui(frame, source_name, key_prefix="plot"):
                 st.multiselect,
                 column.replace("_", " ").title(),
                 values,
-                default=values
-                if column in ("sample_id", "mineral_id", "run_id")
-                else [],
+                default=(
+                    values if column in ("sample_id", "mineral_id", "run_id") else []
+                ),
                 key=f"{key_prefix}::{source_name}::{column}",
             )
     effective = {
