@@ -110,6 +110,15 @@ def exclude_pixels(
                 if reference.channel in frame:
                     changed = frame.copy()
                     changed.loc[same & selected, reference.channel] = np.nan
+                    if "value" in changed and "channel" in changed:
+                        source_values = (
+                            same
+                            & selected
+                            & changed.channel.astype(str)
+                            .eq(reference.channel)
+                            .to_numpy()
+                        )
+                        changed.loc[source_values, "value"] = np.nan
                     collection[key] = changed
                 # Tables containing other channels retain their rows and values.
             else:
@@ -354,3 +363,88 @@ def rename_identity(state, old_identity, new_identity, scope="Dataset"):
         out.get("active_table_name"), out.get("active_table_name")
     )
     return out
+
+
+def store_grain_result(state, reference, updated):
+    """Replace a grain set without deleting independently drawn domains."""
+    key = reference.key
+    old = state.grain_results.get(key)
+    identity = (reference.sample_id, reference.mineral_id, reference.run_id)
+    ids = ("sample_id", "mineral_id", "run_id")
+    # A moved center remains valid only if that grain's footprint did not change.
+    for center_key in list(state.manual_grain_centers):
+        if not center_key.startswith(key + "::"):
+            continue
+        gid = int(center_key.rsplit("::", 1)[1])
+        unchanged = (
+            old is not None
+            and old.labels.shape == updated.labels.shape
+            and np.array_equal(old.labels == gid, updated.labels == gid)
+        )
+        if not unchanged:
+            del state.manual_grain_centers[center_key]
+    for collection in (state.tables, state.selections):
+        for name, frame in list(collection.items()):
+            if not all(c in frame for c in ids):
+                continue
+            same = np.logical_and.reduce(
+                [frame[c].astype(str).eq(v).to_numpy() for c, v in zip(ids, identity)]
+            )
+            if "grain_layer_key" in frame:
+                same &= frame.grain_layer_key.astype(str).eq(key).to_numpy()
+            elif any(
+                name.endswith(other_key)
+                for other_key in state.grain_results
+                if other_key != key
+            ):
+                continue
+            if not same.any():
+                continue
+            if any(
+                c in frame
+                for c in (
+                    "radial_distance_normalized",
+                    "distance_bin",
+                    "profile_degrees",
+                )
+            ):
+                collection[name] = frame.loc[~same].copy()
+                continue
+            if {"grain_id", "row_index", "column_index"}.issubset(frame):
+                changed = frame.copy()
+                row = pd.to_numeric(frame.row_index, errors="coerce").to_numpy(float)
+                col = pd.to_numeric(frame.column_index, errors="coerce").to_numpy(float)
+                valid = (
+                    same
+                    & np.isfinite(row)
+                    & np.isfinite(col)
+                    & (row == np.floor(row))
+                    & (col == np.floor(col))
+                    & (row >= 0)
+                    & (col >= 0)
+                    & (row < updated.labels.shape[0])
+                    & (col < updated.labels.shape[1])
+                )
+                changed.loc[valid, "grain_id"] = updated.labels[
+                    row[valid].astype(int), col[valid].astype(int)
+                ]
+                if "grain_uid" in changed:
+                    changed.loc[valid, "grain_uid"] = [
+                        ":".join(identity) + ":" + str(int(g)) if g > 0 else ""
+                        for g in changed.loc[valid, "grain_id"]
+                    ]
+                collection[name] = changed
+            elif "grain_id" in frame and "selection_id" not in frame:
+                # Derived shape/chemistry summaries must be replaced, not left stale.
+                collection[name] = frame.loc[~same].copy()
+    state.grain_results[key] = updated
+    state.tables[f"Grain means | {key}"] = updated.shape_table
+    state.tables[f"Grain pixels | {key}"] = updated.pixel_table
+    for cache in (
+        "pca_output",
+        "pca_source",
+        "pca_pixel_source",
+        "contact_comparison_result",
+        "contact_comparison_settings",
+    ):
+        state.pop(cache, None)
