@@ -180,9 +180,11 @@ with alias:
             definition = make_definition(
                 "alias",
                 target,
-                "*"
-                if future_alias
-                else (layer.sample_id, layer.mineral_id, layer.run_id),
+                (
+                    "*"
+                    if future_alias
+                    else (layer.sample_id, layer.mineral_id, layer.run_id)
+                ),
                 sources=sources,
                 rule=rule,
             )
