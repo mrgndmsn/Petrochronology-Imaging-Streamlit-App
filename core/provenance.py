@@ -11,6 +11,7 @@ IDENTIFIER_COLUMNS = [
     "run_id",
     "grain_id",
     "grain_uid",
+    "grain_layer_key",
     "selection_type",
     "selection_id",
     "profile_id",
@@ -30,11 +31,15 @@ def compatible_layers(reference: MapLayer, layers) -> list[MapLayer]:
         and layer.run_id == reference.run_id
         and layer.mineral_id == reference.mineral_id
         and layer.values.shape == reference.values.shape
-        and np.allclose(layer.x, reference.x)
-        and np.allclose(layer.y, reference.y)
-        and all(
-            np.allclose(a, b)
-            for a, b in zip(layer.coordinate_grids(), reference.coordinate_grids())
+        and np.allclose(layer.x, reference.x, rtol=0, atol=1e-6)
+        and np.allclose(layer.y, reference.y, rtol=0, atol=1e-6)
+        and (
+            "x_grid" not in layer.metadata
+            and "x_grid" not in reference.metadata
+            or all(
+                np.allclose(a, b, rtol=0, atol=1e-6)
+                for a, b in zip(layer.coordinate_grids(), reference.coordinate_grids())
+            )
         )
     ]
 
@@ -71,6 +76,7 @@ def grain_pixels_all_channels(
         f"{reference.sample_id}:{reference.mineral_id}:{reference.run_id}:{gid}"
         for gid in table.grain_id
     ]
+    table["grain_layer_key"] = reference.key
     table["selection_type"] = "grain"
     table["selection_id"] = table["grain_uid"]
     return table
@@ -81,6 +87,7 @@ def grain_summary_all_channels(
 ) -> pd.DataFrame:
     pixels = grain_pixels_all_channels(reference, result, layers)
     summary = result.shape_table.copy()
+    summary["grain_layer_key"] = reference.key
     metadata = set(IDENTIFIER_COLUMNS + ["x", "y", "row_index", "column_index"])
     channels = [
         c
@@ -117,6 +124,7 @@ def enrich_selection(
         if column not in table or column in {"selection_type", "selection_id"}:
             table[column] = selection[column].to_numpy()
     if grain_result is not None:
+        table["grain_layer_key"] = reference.key
         table["grain_id"] = grain_result.labels[rows, columns].astype(int)
         table["grain_uid"] = [
             (
@@ -142,7 +150,7 @@ def ellipse_radial_table(
 ):
     ids = (
         set(map(int, grain_ids))
-        if grain_ids
+        if grain_ids is not None
         else set(result.shape_table.grain_id.astype(int))
     )
     parts = []
@@ -282,7 +290,7 @@ def spoke_profile_table(
 ):
     ids = (
         set(map(int, grain_ids))
-        if grain_ids
+        if grain_ids is not None
         else set(result.shape_table.grain_id.astype(int))
     )
     centers = centers or {}
@@ -310,7 +318,11 @@ def spoke_profile_table(
                 spoke_shape["grain_length_um"],
                 spoke_shape["grain_width_um"],
                 spoke_shape["orientation_deg"],
-            ) = major, minor, angle
+            ) = (
+                major,
+                minor,
+                angle,
+            )
         for spoke in ordered_spokes(spoke_shape, center, spoke_count):
             x0, y0 = center
             x1, y1 = spoke["xedge"], spoke["yedge"]
