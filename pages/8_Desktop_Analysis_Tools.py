@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -349,6 +350,12 @@ with tabs[2]:
                         float(v.strip())
                         for v in bounds.replace(":", ",").split(",")[:2]
                     ]
+                    if (
+                        not np.isfinite([low, high]).all()
+                        or low >= high
+                        or (log_y and low <= 0)
+                    ):
+                        raise ValueError("Invalid axis bounds")
                     y_ranges[channel_name.strip()] = [low, high]
                 except (TypeError, ValueError):
                     st.warning(f"Could not read Y range: {line}")
@@ -356,10 +363,22 @@ with tabs[2]:
                 for row_number, channel_name in enumerate(values, 1):
                     if channel_name in y_ranges:
                         fig.update_yaxes(
-                            range=y_ranges[channel_name], row=row_number, col=1
+                            range=(
+                                np.log10(y_ranges[channel_name]).tolist()
+                                if log_y
+                                else y_ranges[channel_name]
+                            ),
+                            row=row_number,
+                            col=1,
                         )
             elif len(values) == 1 and values[0] in y_ranges:
-                fig.update_yaxes(range=y_ranges[values[0]])
+                fig.update_yaxes(
+                    range=(
+                        np.log10(y_ranges[values[0]]).tolist()
+                        if log_y
+                        else y_ranges[values[0]]
+                    )
+                )
             render_chart(fig, width="stretch")
             st.download_button(
                 "Download profile figure",
@@ -396,15 +415,24 @@ with tabs[3]:
                 if c in frame
             ],
         )
-        ratios = st.multiselect(
-            "Ratio columns", numeric_columns(frame), default=numeric_columns(frame)[:3]
+        ratio_options = ["Not selected"] + numeric_columns(frame)
+        ratios = [
+            st.selectbox(label, ratio_options, key="grouped_ratio_" + system)
+            for system, label in [
+                ("68", "206Pb/238U ratio"),
+                ("75", "207Pb/235U ratio"),
+                ("76", "207Pb/206Pb ratio"),
+            ]
+        ]
+        st.caption(
+            "Assign ratio columns explicitly. Calculations use paired finite rows; internal errors are standard errors of pixel means, not instrument uncertainties. Correlated pixels can underestimate uncertainty."
         )
         ratio_method = st.radio(
             "²⁰⁷Pb/²³⁵U group calculation",
             ["Mean of pixel ratios", "Ratio of means/product"],
             horizontal=True,
         )
-        if ratios:
+        if "Not selected" not in ratios and len(set(ratios)) == 3:
             means = grouped_upb_means(frame, groups, ratios, ratio_method)
             st.dataframe(means, width="stretch", hide_index=True)
             st.download_button(
