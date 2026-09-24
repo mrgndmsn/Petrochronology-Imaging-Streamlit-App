@@ -109,6 +109,21 @@ drawing_figure = combined_map_figure(
     log_color=log_color,
     colorscale=scale,
 )
+pending_spot_key = f"pending_spot::{context_key}"
+pending_spot = st.session_state.get(pending_spot_key)
+if draw_mode == "Spot" and pending_spot is not None:
+    radius = direct_size or 0.5 * min(min(l.pixel_size) for l in visible_layers)
+    angle = np.linspace(0, 2 * np.pi, 129)
+    drawing_figure.add_scattergl(
+        x=pending_spot[0] + radius * np.cos(angle),
+        y=pending_spot[1] + radius * np.sin(angle),
+        mode="lines", line=dict(color=new_color, width=3), name="Unsaved spot",
+    )
+    drawing_figure.add_scattergl(
+        x=[pending_spot[0]], y=[pending_spot[1]], mode="markers+text",
+        text=[direct_name], textposition="top center",
+        marker=dict(color=new_color, size=9), name="Spot center",
+    )
 draft_vertices = st.session_state.get(f"profile_vertices::{context_key}", [])
 lasso_vertices = st.session_state.get(f"lasso_vertices::{context_key}", [])
 if draw_mode == "Lasso vertices" and lasso_vertices:
@@ -117,7 +132,7 @@ if draw_mode == "Lasso vertices" and lasso_vertices:
         if len(lasso_vertices) >= 3
         else lasso_vertices
     )
-    drawing_figure.add_scatter(
+    drawing_figure.add_scattergl(
         x=[p[0] for p in points_to_draw],
         y=[p[1] for p in points_to_draw],
         mode="lines+markers",
@@ -128,7 +143,7 @@ if draw_mode == "Profile vertices" and draft_vertices:
     profile_buffer(
         drawing_figure, draft_vertices, direct_size, new_color, "Draft profile buffer"
     )
-    drawing_figure.add_scatter(
+    drawing_figure.add_scattergl(
         x=[p[0] for p in draft_vertices],
         y=[p[1] for p in draft_vertices],
         mode="lines+markers+text",
@@ -148,7 +163,7 @@ drawing_figure.update_layout(
     }[draw_mode]
 )
 st.caption(
-    "Rectangle/lasso: drag on the map, then save below. Spot/profile: click a measured pixel, then save the spot or add the vertex. Use the toolbar to zoom/pan, then Box Select or Lasso Select to resume drawing. Profiles use successive clicked vertices."
+    "Rectangle/lasso: drag on the map, then save below. Spot/profile: click a measured pixel, then save the spot. Each vertex click is added immediately. Use the toolbar to zoom/pan, then Box Select or Lasso Select to resume drawing. Profiles use successive clicked vertices."
 )
 event = render_chart(
     drawing_figure,
@@ -184,6 +199,19 @@ event_id = getattr(event, "event_id", None)
 if event_id is not None and event_id == st.session_state.get("saved_draw_event"):
     direct_selection = {}
 
+clicked = selected_point(direct_selection)
+click_token = (context_key, draw_mode, event_id)
+if (clicked is not None and event_id is not None
+        and draw_mode in ("Spot", "Lasso vertices", "Profile vertices")
+        and st.session_state.get("processed_selection_click") != click_token):
+    st.session_state["processed_selection_click"] = click_token
+    if draw_mode == "Spot":
+        st.session_state[pending_spot_key] = clicked
+    else:
+        prefix = "lasso_vertices" if draw_mode == "Lasso vertices" else "profile_vertices"
+        st.session_state.setdefault(f"{prefix}::{context_key}", []).append(clicked)
+    st.rerun()
+
 created = None
 if direct_selection:
     st.caption(
@@ -211,7 +239,7 @@ elif effective_mode == "Lasso domain":
         vertices = list(zip(map(float, lasso["x"]), map(float, lasso["y"])))
         created = (direct_name, select_geometry("lasso", vertices, direct_name))
 elif effective_mode == "Spot":
-    selected = selected_point(direct_selection)
+    selected = st.session_state.get(pending_spot_key)
     if selected and st.button("Save clicked spot", type="primary"):
         created = (
             direct_name,
@@ -223,10 +251,7 @@ elif effective_mode == "Lasso vertices":
     draft_key = f"lasso_vertices::{context_key}"
     st.session_state.setdefault(draft_key, [])
     selected = selected_point(direct_selection)
-    add, undo, clear = st.columns(3)
-    if add.button("Add clicked lasso vertex", disabled=selected is None):
-        st.session_state[draft_key].append(selected)
-        st.rerun()
+    undo, clear = st.columns(2)
     if undo.button("Undo lasso vertex", disabled=not st.session_state[draft_key]):
         st.session_state[draft_key].pop()
         st.rerun()
@@ -234,7 +259,7 @@ elif effective_mode == "Lasso vertices":
         st.session_state[draft_key] = []
         st.rerun()
     st.caption(
-        f"{len(st.session_state[draft_key])} lasso vertices added. Click a pixel and add each vertex, then save to close the polygon."
+        f"{len(st.session_state[draft_key])} lasso vertices added. Click pixels to add vertices, then save to close the polygon."
     )
     if st.button("Save lasso polygon", disabled=len(st.session_state[draft_key]) < 3):
         created = (
@@ -245,10 +270,7 @@ else:
     draft_key = f"profile_vertices::{context_key}"
     st.session_state.setdefault(draft_key, [])
     selected = selected_point(direct_selection)
-    add, undo, clear = st.columns(3)
-    if add.button("Add clicked vertex", disabled=selected is None):
-        st.session_state[draft_key].append(selected)
-        st.rerun()
+    undo, clear = st.columns(2)
     if undo.button("Undo vertex", disabled=not st.session_state[draft_key]):
         st.session_state[draft_key].pop()
         st.rerun()
@@ -288,77 +310,77 @@ with st.expander("Exact coordinate entry (optional reproducible alternative)"):
     st.caption(
         "Use these controls when you need exact typed coordinates instead of mouse drawing."
     )
-tab_rect, tab_lasso, tab_spot, tab_profile = st.tabs(
-    ["Rectangle domain", "Lasso domain", "Spot", "Buffered profile"]
-)
-with tab_rect:
-    c = st.columns(4)
-    x0 = c[0].number_input(
-        "X minimum", value=min(float(l.x.min()) for l in visible_layers)
+    tab_rect, tab_lasso, tab_spot, tab_profile = st.tabs(
+        ["Rectangle domain", "Lasso domain", "Spot", "Buffered profile"]
     )
-    x1 = c[1].number_input(
-        "X maximum", value=max(float(l.x.max()) for l in visible_layers)
-    )
-    y0 = c[2].number_input(
-        "Y minimum", value=min(float(l.y.min()) for l in visible_layers)
-    )
-    y1 = c[3].number_input(
-        "Y maximum", value=max(float(l.y.max()) for l in visible_layers)
-    )
-    name = st.text_input("Domain name", "Domain 1", key="rect_name")
-    if st.button("Create rectangular domain"):
-        created = (name, select_geometry("rectangle", (x0, x1, y0, y1), name))
-with tab_lasso:
-    raw = st.text_area("Polygon vertices (x,y; x,y; ...)", key="poly_points")
-    name = st.text_input("Domain name", "Lasso 1", key="lasso_name")
-    if st.button("Create lasso domain"):
-        try:
-            created = (name, select_geometry("lasso", points(raw), name))
-        except Exception as exc:
-            st.error(str(exc))
-with tab_spot:
-    c = st.columns(3)
-    x = c[0].number_input("Spot X")
-    y = c[1].number_input("Spot Y")
-    radius = c[2].number_input("Radius (µm)", min_value=0.0)
-    name = st.text_input("Spot name", "Spot 1")
-    if st.button("Pick spot"):
-        created = (name, select_geometry("spot", (x, y, radius), name))
-with tab_profile:
-    raw = st.text_area(
-        "Profile vertices in order (x,y; x,y; ...)", key="profile_points"
-    )
-    buffer = st.number_input("Half-width buffer (µm)", min_value=0.0)
-    name = st.text_input("Profile name", "Profile 1")
-    sampling = st.selectbox(
-        "Profile sampling",
-        ["Buffered pixels", "Bilinear interpolation", "Nearest interpolation"],
-    )
-    spacing = st.number_input(
-        "Interpolated sample spacing (µm)",
-        min_value=1e-06,
-        value=float(min(layer.pixel_size)),
-    )
-    if st.button("Create buffered multi-segment profile"):
-        try:
-            created = (
-                name,
-                (
-                    select_geometry("profile", points(raw), "profile", buffer)
-                    if sampling == "Buffered pixels"
-                    else select_geometry(
-                        "profile",
-                        points(raw),
-                        "profile",
-                        sampling=(
-                            "bilinear" if sampling.startswith("Bilinear") else "nearest"
-                        ),
-                        spacing=spacing,
-                    )
-                ),
-            )
-        except Exception as exc:
-            st.error(str(exc))
+    with tab_rect:
+        c = st.columns(4)
+        x0 = c[0].number_input(
+            "X minimum", value=min(float(l.x.min()) for l in visible_layers)
+        )
+        x1 = c[1].number_input(
+            "X maximum", value=max(float(l.x.max()) for l in visible_layers)
+        )
+        y0 = c[2].number_input(
+            "Y minimum", value=min(float(l.y.min()) for l in visible_layers)
+        )
+        y1 = c[3].number_input(
+            "Y maximum", value=max(float(l.y.max()) for l in visible_layers)
+        )
+        name = direct_name
+        if st.button("Create rectangular domain"):
+            created = (name, select_geometry("rectangle", (x0, x1, y0, y1), name))
+    with tab_lasso:
+        raw = st.text_area("Polygon vertices (x,y; x,y; ...)", key="poly_points")
+        name = direct_name
+        if st.button("Create lasso domain"):
+            try:
+                created = (name, select_geometry("lasso", points(raw), name))
+            except Exception as exc:
+                st.error(str(exc))
+    with tab_spot:
+        c = st.columns(3)
+        x = c[0].number_input("Spot X")
+        y = c[1].number_input("Spot Y")
+        radius = c[2].number_input("Radius (µm)", min_value=0.0)
+        name = direct_name
+        if st.button("Pick spot"):
+            created = (name, select_geometry("spot", (x, y, radius), name))
+    with tab_profile:
+        raw = st.text_area(
+            "Profile vertices in order (x,y; x,y; ...)", key="profile_points"
+        )
+        buffer = st.number_input("Half-width buffer (µm)", min_value=0.0)
+        name = direct_name
+        sampling = st.selectbox(
+            "Profile sampling",
+            ["Buffered pixels", "Bilinear interpolation", "Nearest interpolation"],
+        )
+        spacing = st.number_input(
+            "Interpolated sample spacing (µm)",
+            min_value=1e-06,
+            value=float(min(layer.pixel_size)),
+        )
+        if st.button("Create buffered multi-segment profile"):
+            try:
+                created = (
+                    name,
+                    (
+                        select_geometry("profile", points(raw), "profile", buffer)
+                        if sampling == "Buffered pixels"
+                        else select_geometry(
+                            "profile",
+                            points(raw),
+                            "profile",
+                            sampling=(
+                                "bilinear" if sampling.startswith("Bilinear") else "nearest"
+                            ),
+                            spacing=spacing,
+                        )
+                    ),
+                )
+            except Exception as exc:
+                st.error(str(exc))
 if created and not created[0].strip():
     st.error("Enter a selection name before saving.")
     created = None
@@ -398,6 +420,7 @@ if created:
         st.session_state[f"lasso_vertices::{context_key}"] = []
     if draw_mode == "Profile vertices":
         st.session_state[f"profile_vertices::{context_key}"] = []
+    st.session_state.pop(pending_spot_key, None)
     st.session_state["last_saved_selection_name"] = created[0]
     st.session_state["saved_draw_event"] = event_id
     st.rerun()
