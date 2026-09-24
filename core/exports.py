@@ -130,6 +130,19 @@ def render_chart(figure, **kwargs):
             key=f"{chart_key}_equal_scale_v2",
             help="Turn off to zoom to any rectangular range. Unequal scales distort grain shapes visually.",
         )
+        with st.expander("Map orientation"):
+            flip_x = _remembered_input(
+                "map_flip_x", st.checkbox, "Flip X axis",
+                value=figure.layout.xaxis.autorange == "reversed",
+                key=f"{chart_key}_flip_x",
+            )
+            flip_y = _remembered_input(
+                "map_flip_y", st.checkbox, "Flip Y axis",
+                value=figure.layout.yaxis.autorange == "reversed",
+                key=f"{chart_key}_flip_y",
+            )
+        figure.update_xaxes(autorange="reversed" if flip_x else True)
+        figure.update_yaxes(autorange="reversed" if flip_y else True)
         axis_direction = (
             figure.layout.xaxis.autorange == "reversed",
             figure.layout.yaxis.autorange == "reversed",
