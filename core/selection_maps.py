@@ -186,8 +186,23 @@ def map_overlay_figure(
         if index:
             options["scale_bar_um"] = 0
             options["show_colorbar"] = False
+        mineral_raster = color_by == "Mineral" and "x_grid" not in layer.metadata
+        render_layer = layer
+        if mineral_raster:
+            from dataclasses import replace
+
+            # Use the existing grid directly; do not expand it to an XY table
+            # and then reconstruct the same raster for categorical coloring.
+            mask = np.full(layer.values.shape, np.nan, dtype=np.float32)
+            mask[np.isfinite(layer.values)] = 1
+            render_layer = replace(layer, values=mask)
+            color = palette[layer.mineral_id]
+            options.update(
+                colorscale=[[0, color], [1, color]],
+                vmin=0, vmax=1, log_color=False, show_colorbar=False,
+            )
         current = map_figure(
-            layer,
+            render_layer,
             labels=result.labels if result else None,
             grain_shapes=result.shape_table if result else None,
             manual_centers=local_centers,
@@ -195,7 +210,17 @@ def map_overlay_figure(
         )
         if figure is None:
             figure = current
-        if color_by == "Mineral":
+        if mineral_raster:
+            background = current.data[0]
+            background.update(
+                customdata=None, name=layer.mineral_id,
+                legendgroup=layer.mineral_id, showlegend=True,
+                meta={"color_by": "mineral_id"},
+                hoverongaps=False, zsmooth=False,
+                hovertemplate="X=%{x}<br>Y=%{y}<extra>%{fullData.name}</extra>",
+            )
+            backgrounds.append(background)
+        elif color_by == "Mineral":
             r, c = np.where(np.isfinite(layer.values))
             x, y = layer.coordinates_at(r, c)
             from .map_highlight import _raster_highlight
