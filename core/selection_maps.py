@@ -123,7 +123,16 @@ def filtered_saved_selections(selections, layers):
     keys = {layer.key for layer in layers}
     result = {}
     for key, table in selections.items():
-        if "source_layer_key" in table:
+        ids = ["sample_id", "mineral_id", "run_id"]
+        if set(ids).issubset(table.columns):
+            # Domains belong to the dataset, not only the channel used to draw them.
+            identities = {tuple(str(getattr(layer, c)) for c in ids) for layer in layers}
+            mask = pd.Series(
+                [tuple(map(str, row)) in identities
+                 for row in table[ids].itertuples(index=False, name=None)],
+                index=table.index,
+            )
+        elif "source_layer_key" in table:
             mask = table.source_layer_key.isin(keys)
         else:
             # Older single-map selections encode their source in the saved key.
