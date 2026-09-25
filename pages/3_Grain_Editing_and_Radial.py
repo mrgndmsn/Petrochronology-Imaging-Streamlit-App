@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 import numpy as np
 import pandas as pd
 
@@ -19,7 +20,6 @@ from core.provenance import (
 )
 from core.selections import merge_grains, split_crossed_grains
 from core.state import initialize_state
-
 
 st.set_page_config(page_title="Grain editing", page_icon="✂️", layout="wide")
 initialize_state()
@@ -57,11 +57,7 @@ def editing_map():
 
 result = st.session_state.grain_results[key]
 layer = st.session_state.layers[result.layer_key]
-ids = (
-    result.shape_table["grain_id"].astype(int).tolist()
-    if not result.shape_table.empty
-    else []
-)
+ids = result.shape_table["grain_id"].astype(int).tolist() if not result.shape_table.empty else []
 if not ids:
     st.info("This set has no grains.")
     st.stop()
@@ -78,12 +74,8 @@ def replace_labels(labels):
     )
     shapes, pixels = measure_grains(layer, labels)
     updated = GrainResult(result.layer_key, labels, shapes, pixels, result.settings)
-    updated.pixel_table = grain_pixels_all_channels(
-        layer, updated, st.session_state.layers
-    )
-    updated.shape_table = grain_summary_all_channels(
-        layer, updated, st.session_state.layers
-    )
+    updated.pixel_table = grain_pixels_all_channels(layer, updated, st.session_state.layers)
+    updated.shape_table = grain_summary_all_channels(layer, updated, st.session_state.layers)
     from core.workspace import store_grain_result
 
     store_grain_result(st.session_state, layer, updated)
@@ -177,9 +169,7 @@ with tab_split:
     c1 = c[2].number_input("End column", value=float(result.labels.shape[1] - 1))
     r1 = c[3].number_input("End row", value=float(result.labels.shape[0] - 1))
     width = c[4].number_input("Width (pixels)", 1.0, 20.0, 1.0)
-    st.session_state.setdefault(
-        draft_key + "_use", len(st.session_state[draft_key]) == 2
-    )
+    st.session_state.setdefault(draft_key + "_use", len(st.session_state[draft_key]) == 2)
     use_clicked = st.checkbox(
         "Use clicked endpoints",
         key=draft_key + "_use",
@@ -257,28 +247,20 @@ with tab_center:
         st.caption(
             f"Selected center: X={clicked[0]:.4g}, Y={clicked[1]:.4g} µm. Click Save moved center to apply."
         )
-    center_mode = st.radio(
-        "Center input", ["Map click", "Typed coordinates"], horizontal=True
-    )
+    center_mode = st.radio("Center input", ["Map click", "Typed coordinates"], horizontal=True)
     c = st.columns(2)
     saved_center = st.session_state.manual_grain_centers.get(
         center_key, [float(row.ellipse_center_x_um), float(row.ellipse_center_y_um)]
     )
-    cx = c[0].number_input(
-        "Center X (µm)", value=saved_center[0], key=center_key + "_typed_x"
-    )
-    cy = c[1].number_input(
-        "Center Y (µm)", value=saved_center[1], key=center_key + "_typed_y"
-    )
+    cx = c[0].number_input("Center X (µm)", value=saved_center[0], key=center_key + "_typed_x")
+    cy = c[1].number_input("Center Y (µm)", value=saved_center[1], key=center_key + "_typed_y")
     center_key = f"{key}::{gid}"
     if st.button(
         "Save moved center",
         type="primary",
         disabled=center_mode == "Map click" and clicked is None,
     ):
-        chosen_center = (
-            clicked if center_mode == "Map click" and clicked is not None else (cx, cy)
-        )
+        chosen_center = clicked if center_mode == "Map click" and clicked is not None else (cx, cy)
         st.session_state.manual_grain_centers[center_key] = list(chosen_center)
         st.session_state.pop(pending_key, None)
         st.rerun()
@@ -295,10 +277,7 @@ with tab_radial:
     rim = c[2].number_input("Rim cutoff", 0.0, 1.0, 0.67)
     spokes = c[3].number_input("Profiles per grain", 1, 180, 8)
     buffer = c[4].number_input("Spoke buffer (pixels)", 0.0, 20.0, 1.0)
-    centers = {
-        gid: st.session_state.manual_grain_centers.get(f"{key}::{gid}")
-        for gid in chosen
-    }
+    centers = {gid: st.session_state.manual_grain_centers.get(f"{key}::{gid}") for gid in chosen}
     st.caption(
         "Numbered spokes use the fitted ellipse and any saved moved center. Their count matches Profiles per grain; the buffer controls which pixels contribute to each profile."
     )
@@ -306,9 +285,7 @@ with tab_radial:
         layer,
         labels=result.labels,
         grain_shapes=result.shape_table[result.shape_table.grain_id.isin(chosen)],
-        manual_centers={
-            gid: center for gid, center in centers.items() if center is not None
-        },
+        manual_centers={gid: center for gid, center in centers.items() if center is not None},
         radial_spokes=int(spokes),
     )
     render_chart(spoke_map, width="stretch", key=f"radial_spoke_map::{key}")
@@ -332,9 +309,7 @@ with tab_radial:
     )
     use_intensity = st.checkbox("Use an element map to help label core and rim")
     radial_channels = [
-        c
-        for c in radial.columns
-        if pd.to_numeric(radial[c], errors="coerce").notna().any()
+        c for c in radial.columns if pd.to_numeric(radial[c], errors="coerce").notna().any()
     ]
     if use_intensity and radial_channels:
         ic = st.columns(4)
@@ -370,9 +345,7 @@ with tab_radial:
             "Group numbers using one line per group, for example Left = 1,2,3. Unlisted grains/profiles remain separate."
         )
         grain_groups = st.text_area("Grain groups", key="radial_grain_groups::" + key)
-        profile_groups = st.text_area(
-            "Profile number groups", key="radial_profile_groups::" + key
-        )
+        profile_groups = st.text_area("Profile number groups", key="radial_profile_groups::" + key)
         try:
             pixels = apply_groups(pixels, grain_groups, profile_groups)
         except ValueError as exc:
@@ -381,11 +354,7 @@ with tab_radial:
         channel = st.selectbox(
             "Profile value",
             channel_choices,
-            index=(
-                channel_choices.index(layer.channel)
-                if layer.channel in channel_choices
-                else 0
-            ),
+            index=(channel_choices.index(layer.channel) if layer.channel in channel_choices else 0),
         )
         from core.xy_link import ROW_ID, linked_plot_ui
 
@@ -409,9 +378,7 @@ with tab_radial:
             selection_mode=("points", "box", "lasso"),
         )
         linked_plot_ui(pixels, radial_event, st.session_state, key_prefix="radial")
-        st.caption(
-            "Lasso or box-select profile pixels to highlight them on matching maps."
-        )
+        st.caption("Lasso or box-select profile pixels to highlight them on matching maps.")
 
         grouped = pixels.copy()
         grouped["distance_bin"] = pd.cut(
@@ -443,10 +410,7 @@ with tab_radial:
             width="stretch",
         )
     st.dataframe(
-        radial.groupby(["grain_id", "radial_zone"])
-        .size()
-        .rename("n_pixels")
-        .reset_index(),
+        radial.groupby(["grain_id", "radial_zone"]).size().rename("n_pixels").reset_index(),
         width="stretch",
         hide_index=True,
     )
@@ -460,20 +424,10 @@ with tab_radial:
         st.session_state.tables[
             f"Grain spoke bins | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
         ] = summary
-        st.session_state.active_table_name = f"Grain spoke pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-        st.success(
-            "Radial zones and spoke pixels are now available to every plotting filter."
+        st.session_state.active_table_name = (
+            f"Grain spoke pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
         )
+        st.success("Radial zones and spoke pixels are now available to every plotting filter.")
     a, b = st.columns(2)
-    a.download_button(
-        "Download radial pixels",
-        radial.to_csv(index=False),
-        "grain_core_rim_pixels.csv",
-        "text/csv",
-    )
-    b.download_button(
-        "Download spoke pixels",
-        pixels.to_csv(index=False),
-        "grain_spoke_pixels.csv",
-        "text/csv",
-    )
+    download_table("Download radial pixels", radial, "grain_core_rim_pixels.csv", container=a)
+    download_table("Download spoke pixels", pixels, "grain_spoke_pixels.csv", container=b)
