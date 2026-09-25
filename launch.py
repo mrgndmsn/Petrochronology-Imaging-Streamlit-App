@@ -1,5 +1,3 @@
-"""Set up and run a private Streamlit server on this computer."""
-
 import argparse
 import hashlib
 import os
@@ -19,17 +17,14 @@ def environment_python():
 
 def requirements_digest():
     content = b"".join(
-        (ROOT / name).read_bytes()
-        for name in ("requirements.txt", "requirements-local.txt")
+        (ROOT / name).read_bytes() for name in ("requirements.txt", "requirements-local.txt")
     )
     return hashlib.sha256(content).hexdigest()
 
 
 def setup():
     if not (3, 11) <= sys.version_info[:2] <= (3, 13):
-        raise RuntimeError(
-            "Install Python 3.13 from python.org, then open the launcher again."
-        )
+        raise RuntimeError("Install Python 3.13 from python.org, then open the launcher again.")
     python = environment_python()
     if not python.exists():
         print("Creating the local Python environment...", flush=True)
@@ -72,7 +67,7 @@ def server_command(python, port):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Run the app locally.")
     parser.add_argument("--port", type=int, default=8501)
     parser.add_argument("--setup-only", action="store_true")
     args = parser.parse_args()
