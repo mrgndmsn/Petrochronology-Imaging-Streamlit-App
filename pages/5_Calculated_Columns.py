@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 
 import numpy as np
 import pandas as pd
@@ -7,22 +8,17 @@ import streamlit as st
 from core.analysis import evaluate_equation
 from core.state import initialize_state
 
-
 st.set_page_config(page_title="Calculated columns", page_icon="➗", layout="wide")
 initialize_state()
 st.title("Calculated columns and data table")
 
-if not (
-    st.session_state.tables or st.session_state.layers or st.session_state.point_layers
-):
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import data or run grain detection first.")
     st.stop()
 from core.data_sources import analysis_source_ui
 
 if "_calculated_next_source" in st.session_state:
-    st.session_state["calculated_source"] = st.session_state.pop(
-        "_calculated_next_source"
-    )
+    st.session_state["calculated_source"] = st.session_state.pop("_calculated_next_source")
 name, frame = analysis_source_ui(st.session_state, "calculated")
 existing = st.session_state.tables.get(name)
 editable = (
@@ -78,9 +74,7 @@ elif operation != "Custom equation":
     count = 1 if operation == "Log10" else 2
     boxes = st.columns(count)
     selected = [
-        boxes[i].selectbox(
-            chr(65 + i), numeric, index=min(i, len(numeric) - 1), key=f"calc_{i}"
-        )
+        boxes[i].selectbox(chr(65 + i), numeric, index=min(i, len(numeric) - 1), key=f"calc_{i}")
         for i in range(count)
     ]
 st.write(
@@ -100,9 +94,7 @@ if st.button("Calculate column", type="primary"):
             elif operation == "A / B":
                 frame[new_name] = pd.to_numeric(
                     frame[selected[0]], errors="coerce"
-                ) / pd.to_numeric(frame[selected[1]], errors="coerce").replace(
-                    0, np.nan
-                )
+                ) / pd.to_numeric(frame[selected[1]], errors="coerce").replace(0, np.nan)
             elif operation == "A + B":
                 frame[new_name] = pd.to_numeric(
                     frame[selected[0]], errors="coerce"
@@ -116,9 +108,7 @@ if st.button("Calculate column", type="primary"):
                     frame[selected[0]], errors="coerce"
                 ) * pd.to_numeric(frame[selected[1]], errors="coerce")
             elif operation == "Mean of selected columns":
-                frame[new_name] = (
-                    frame[selected].apply(pd.to_numeric, errors="coerce").mean(axis=1)
-                )
+                frame[new_name] = frame[selected].apply(pd.to_numeric, errors="coerce").mean(axis=1)
             elif operation == "Log10":
                 values = pd.to_numeric(frame[selected[0]], errors="coerce")
                 frame[new_name] = np.where(values > 0, np.log10(values), np.nan)
@@ -156,23 +146,14 @@ if right.button("Delete selected column", disabled=delete == "None"):
     st.session_state.tables[name] = frame.drop(columns=[delete])
     st.rerun()
 st.dataframe(st.session_state.tables[name], width="stretch")
-st.download_button(
-    "Download table",
-    st.session_state.tables[name].to_csv(index=False),
-    "calculated_table.csv",
-    "text/csv",
-)
+download_table("Download table", st.session_state.tables[name], "calculated_table.csv")
 
 with st.expander("Custom plotting groups"):
     from core.analysis import assign_custom_groups
 
-    source = st.selectbox(
-        "Group source column", list(st.session_state.tables[name].columns)
-    )
+    source = st.selectbox("Group source column", list(st.session_state.tables[name].columns))
     target = st.text_input("Group column name", "plot_group")
-    mapping = st.text_area(
-        "Group mapping CSV", placeholder="value,group\n1,Core\n2,Rim"
-    )
+    mapping = st.text_area("Group mapping CSV", placeholder="value,group\n1,Core\n2,Rim")
     unmatched = st.text_input("Unmapped values label", "Ungrouped")
     if st.button("Apply custom groups"):
         try:
@@ -181,8 +162,6 @@ with st.expander("Custom plotting groups"):
             )
             history.append(st.session_state.tables[name].copy())
             st.session_state.tables[name] = grouped
-            st.success(
-                "Custom groups are available as color/group choices on plotting pages."
-            )
+            st.success("Custom groups are available as color/group choices on plotting pages.")
         except (ValueError, KeyError) as exc:
             st.error(str(exc))
