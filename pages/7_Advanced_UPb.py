@@ -1,5 +1,4 @@
-"""U–Pb ratios, spatial means, concordia fits, dates and distributions."""
-
+from core.exports import download_table
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -110,9 +109,7 @@ if tool == "Concordia":
                 "Ellipse outlines are limited to the first 1,000 valid plotted rows; all points and all fit inputs are retained."
             )
         for row_id, r in candidates.iloc[:1000].iterrows():
-            xx, yy = error_ellipse(
-                r.plot_x, r.plot_y, r.plot_sx, r.plot_sy, r.plot_rho, 2
-            )
+            xx, yy = error_ellipse(r.plot_x, r.plot_y, r.plot_sx, r.plot_sy, r.plot_rho, 2)
             fig.add_scatter(
                 x=xx,
                 y=yy,
@@ -124,9 +121,7 @@ if tool == "Concordia":
         st.caption(
             f"{int(valid.sum()):,} rows have usable errors/correlation. Points without errors remain visible. SD ellipses describe dispersion; 2σ outlines are not 95% joint confidence regions."
         )
-    label_ages = np.array(
-        [100, 250, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
-    )
+    label_ages = np.array([100, 250, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500])
     label_ages = label_ages[(label_ages >= age_lo) & (label_ages <= age_hi)]
     ax, ay = _upb_concordia_xy(label_ages, coordinates, **constants)
     fig.add_scatter(
@@ -195,9 +190,7 @@ if tool == "Concordia":
                         "Concordia date for each point",
                     ):
                         part = part[
-                            (part.s75 > 0)
-                            & (part.s68 > 0)
-                            & (part.rho_wetherill.abs() < 1)
+                            (part.s75 > 0) & (part.s68 > 0) & (part.rho_wetherill.abs() < 1)
                         ]
                         result = _upb_joint_concordia_date(
                             part.r75.to_numpy(),
@@ -211,9 +204,7 @@ if tool == "Concordia":
                             external_2s_percent=0.0,
                         )
                         if result is None:
-                            raise ValueError(
-                                "No usable ratio covariance for this population."
-                            )
+                            raise ValueError("No usable ratio covariance for this population.")
                         results.append(
                             {
                                 "group": str(label),
@@ -230,9 +221,7 @@ if tool == "Concordia":
                                 ),
                             }
                         )
-                        xx, yy = _upb_concordia_xy(
-                            result["date_ma"], coordinates, **constants
-                        )
+                        xx, yy = _upb_concordia_xy(result["date_ma"], coordinates, **constants)
                         fig.add_scatter(
                             x=[float(xx)],
                             y=[float(yy)],
@@ -254,9 +243,7 @@ if tool == "Concordia":
                             raise ValueError(
                                 "Insufficient independent points with positive uncertainties, or degenerate fit."
                             )
-                        roots = _upb_line_concordia_intercepts(
-                            fit, coordinates, **constants
-                        )
+                        roots = _upb_line_concordia_intercepts(fit, coordinates, **constants)
                         for root in roots or [{}]:
                             results.append(
                                 {
@@ -281,9 +268,9 @@ if tool == "Concordia":
             if results:
                 result_table = pd.DataFrame(results)
                 st.dataframe(result_table, hide_index=True)
-                st.download_button(
+                download_table(
                     "Download concordia/model results",
-                    result_table.to_csv(index=False),
+                    result_table,
                     "upb_models.csv",
                     key="upb_model_csv",
                 )
@@ -299,9 +286,7 @@ if tool == "Concordia":
             ("x", plot.plot_x, plot.plot_sx),
             ("y", plot.plot_y, plot.plot_sy),
         ]:
-            extent = (
-                2 * errors.where(np.isfinite(errors) & (errors > 0), 0) if show else 0
-            )
+            extent = 2 * errors.where(np.isfinite(errors) & (errors > 0), 0) if show else 0
             lo, hi = float((values - extent).min()), float((values + extent).max())
             pad = max((hi - lo) * 0.1, abs(lo) * 0.02, 1e-6)
             fig.update_layout(**{axis + "axis": dict(range=[lo - pad, hi + pad])})
@@ -379,9 +364,7 @@ else:
             ],
             key="upb_wm_group",
         )
-        expand = st.checkbox(
-            "Expand weighted-mean uncertainty for MSWD > 1", key="upb_wm_expand"
-        )
+        expand = st.checkbox("Expand weighted-mean uncertainty for MSWD > 1", key="upb_wm_expand")
         results = []
         if fit_allowed:
             groups = (
@@ -392,9 +375,7 @@ else:
             for label, part in groups:
                 wm = weighted_mean(part.date_ma, part.date_1sigma_ma, expand)
                 if wm:
-                    total = np.hypot(
-                        wm["two_sigma_ma"], abs(wm["mean_ma"]) * external / 100
-                    )
+                    total = np.hypot(wm["two_sigma_ma"], abs(wm["mean_ma"]) * external / 100)
                     results.append(
                         {
                             "group": str(label),
@@ -435,15 +416,13 @@ else:
                 "Shaded bands show each weighted mean ± its total 2σ uncertainty, including the shared external date percentage."
             )
             st.dataframe(pd.DataFrame(results), hide_index=True)
-            st.download_button(
+            download_table(
                 "Download weighted means",
-                pd.DataFrame(results).to_csv(index=False),
+                pd.DataFrame(results),
                 "weighted_means.csv",
                 key="upb_wm_csv",
             )
-        fig.update_layout(
-            xaxis_title="Analysis / group number", yaxis_title="Date (Ma)"
-        )
+        fig.update_layout(xaxis_title="Analysis / group number", yaxis_title="Date (Ma)")
     else:
         mode = st.radio(
             "Distribution",
@@ -451,9 +430,7 @@ else:
             horizontal=True,
             key="upb_distribution",
         )
-        categorical = (
-            color if color and not pd.api.types.is_numeric_dtype(dates[color]) else None
-        )
+        categorical = color if color and not pd.api.types.is_numeric_dtype(dates[color]) else None
         palette = None
         if categorical:
             from core.ree_colors import group_colors
@@ -496,9 +473,7 @@ else:
                 a = part.date_ma.to_numpy()
                 if len(a) > 2 and np.std(a) > 0:
                     grid = np.linspace(a.min(), a.max(), 600)
-                    density = gaussian_kde(
-                        a, bw_method=lambda k: k.scotts_factor() * bw
-                    )(grid)
+                    density = gaussian_kde(a, bw_method=lambda k: k.scotts_factor() * bw)(grid)
                     fig.add_scatter(
                         x=grid,
                         y=density,
@@ -525,9 +500,4 @@ else:
         )
         st.dataframe(summary, hide_index=True)
     compact_render(fig, "upb_date_chart")
-    st.download_button(
-        "Download calculated dates",
-        dates.to_csv(index=False),
-        "upb_dates.csv",
-        key="upb_dates_csv",
-    )
+    download_table("Download calculated dates", dates, "upb_dates.csv", key="upb_dates_csv")
