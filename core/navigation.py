@@ -55,15 +55,7 @@ def grains():
 
 
 def geochronology():
-    tool_tabs(
-        "Geochronology tools",
-        {
-            "Geochronology": "pages/4_Geochronology.py",
-            "Advanced U–Pb": "pages/7_Advanced_UPb.py",
-            "Concordia and fits": "pages/10_Concordia_Population_and_Fits.py",
-        },
-        "geochronology_tool_tab",
-    )
+    run_tool("pages/7_Advanced_UPb.py")
 
 
 def desktop():
