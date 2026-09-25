@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 
 import re
 import numpy as np
@@ -18,13 +19,10 @@ from core.ree import (
 from core.io import numeric_columns
 from core.state import initialize_state
 
-
 st.set_page_config(page_title="REE and ternary", page_icon="🔺", layout="wide")
 initialize_state()
 st.title("REE and ternary plots")
-if not (
-    st.session_state.tables or st.session_state.layers or st.session_state.point_layers
-):
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import data or run grain detection first.")
     st.stop()
 from core.data_sources import analysis_source_ui
@@ -48,15 +46,11 @@ with tab_ree:
         candidates = [
             c
             for c in numbers
-            if re.search(
-                rf"(?<![A-Za-z])(?:\d+)?{element}(?=Total|\d|\b|_)", str(c), re.I
-            )
+            if re.search(rf"(?<![A-Za-z])(?:\d+)?{element}(?=Total|\d|\b|_)", str(c), re.I)
             and not re.search(r"Int2SE|error|sigma|_sd|_n$|age", str(c), re.I)
         ]
         guess = (
-            element
-            if element in numbers
-            else (candidates[0] if len(candidates) == 1 else "None")
+            element if element in numbers else (candidates[0] if len(candidates) == 1 else "None")
         )
         options = ["None"] + numbers
         choice = cols[i % 7].selectbox(
@@ -73,9 +67,7 @@ with tab_ree:
     group = st.selectbox(
         "Group/color",
         ["None"] + list(frame.columns),
-        index=(
-            1 + list(frame.columns).index("dataset_id") if "dataset_id" in frame else 0
-        ),
+        index=(1 + list(frame.columns).index("dataset_id") if "dataset_id" in frame else 0),
         key="ree_group",
     )
     envelope_labels = {
@@ -88,9 +80,7 @@ with tab_ree:
         "±2 log-SD": "logsd2",
         "95% CI of mean": "ci95",
     }
-    envelope = st.selectbox(
-        "Envelope around mean", list(envelope_labels), key="ree_envelope"
-    )
+    envelope = st.selectbox("Envelope around mean", list(envelope_labels), key="ree_envelope")
     st.caption(
         "SD and percentile bands describe variation among observations. The 95% CI estimates uncertainty of the arithmetic mean using Student's t and assumes independent observations; spatially correlated pixels can make it too narrow. Log-SD uses a geometric-mean center."
     )
@@ -153,11 +143,7 @@ with tab_ree:
         norm = None
         if mode == "Individual rows":
             norm = normalize_ree(work, mapping, standard).reindex(columns=REE_ORDER)
-            draw = (
-                norm.sample(int(max_rows), random_state=1)
-                if len(norm) > max_rows
-                else norm
-            )
+            draw = norm.sample(int(max_rows), random_state=1) if len(norm) > max_rows else norm
             row_groups = work[group].astype(str) if group != "None" else None
             curve_labels = (
                 row_groups.loc[draw.index].tolist()
@@ -178,27 +164,20 @@ with tab_ree:
                     opacity=0.25 if envelope != "None" else 1.0,
                     connectgaps=False,
                 )
-            st.caption(
-                f"Drawing {len(draw)} of {len(norm)} rows; the download includes all rows."
-            )
+            st.caption(f"Drawing {len(draw)} of {len(norm)} rows; the download includes all rows.")
         if mode != "Individual rows" or envelope != "None":
             summary_group = (
                 group
-                if mode in ("Group means", "Distance zones", "Individual rows")
-                and group != "None"
+                if mode in ("Group means", "Distance zones", "Individual rows") and group != "None"
                 else None
             )
             if mode == "Individual rows":
                 st.caption(
                     "The selected envelope adds a mean summary over the individual curves. Group/color defines separate summaries; None uses all filtered rows. The row limit does not limit summary calculations."
                 )
-            stats = ree_statistics(
-                work, mapping, standard, summary_group, iqr, multiplier
-            )
+            stats = ree_statistics(work, mapping, standard, summary_group, iqr, multiplier)
             labels = list(stats.group.unique())
-            colors = group_colors(
-                labels, summary_group, st.session_state, color_source, palette
-            )
+            colors = group_colors(labels, summary_group, st.session_state, color_source, palette)
             from core.ree_plot import add_ree_summary
 
             stats, messages = add_ree_summary(
@@ -212,12 +191,7 @@ with tab_ree:
             for message in messages:
                 st.info(message)
             st.dataframe(stats, width="stretch", hide_index=True)
-            st.download_button(
-                "Download REE statistics",
-                stats.to_csv(index=False),
-                "ree_statistics.csv",
-                "text/csv",
-            )
+            download_table("Download REE statistics", stats, "ree_statistics.csv")
         fig.update_xaxes(
             type="linear",
             tickmode="array",
@@ -233,14 +207,9 @@ with tab_ree:
                 st.error("Y bounds must increase and be positive on a log axis.")
             else:
                 fig.update_yaxes(
-                    range=[
-                        np.log10(v) if log and v is not None else v
-                        for v in (ymin, ymax)
-                    ]
+                    range=[np.log10(v) if log and v is not None else v for v in (ymin, ymax)]
                 )
-        fig.update_layout(
-            template="plotly_white", height=650, meta={"palette_owner": "ree"}
-        )
+        fig.update_layout(template="plotly_white", height=650, meta={"palette_owner": "ree"})
         render_chart(fig, width="stretch", key="ree_figure")
         if st.button("Prepare normalized REE download"):
             if norm is None:
@@ -249,11 +218,10 @@ with tab_ree:
             for el in REE_ORDER:
                 export[f"{el}_normalized"] = norm[el]
             export["normalization"] = standard
-            st.download_button(
+            download_table(
                 "Download normalized REE rows",
-                export.to_csv(index=False),
+                export,
                 "ree_normalized.csv",
-                "text/csv",
                 on_click="ignore",
             )
         if st.button("Prepare REE HTML download"):
@@ -272,8 +240,7 @@ with tab_ternary:
     else:
         cols = st.columns(3)
         a, b, c = [
-            cols[i].selectbox(f"{label} axis", numbers, index=i)
-            for i, label in enumerate("ABC")
+            cols[i].selectbox(f"{label} axis", numbers, index=i) for i, label in enumerate("ABC")
         ]
         color = st.selectbox("Ternary color/group", ["None"] + list(frame.columns))
         symbol = st.selectbox("Ternary symbol", ["None"] + list(frame.columns))
@@ -294,15 +261,8 @@ with tab_ternary:
                     opacity=opacity,
                     template="plotly_white",
                 )
-                fig.update_layout(
-                    ternary=dict(aaxis_title=a, baxis_title=b, caxis_title=c)
-                )
+                fig.update_layout(ternary=dict(aaxis_title=a, baxis_title=b, caxis_title=c))
                 render_chart(fig, width="stretch", key="ternary_figure")
-                st.download_button(
-                    "Download ternary fractions",
-                    tern.to_csv(index=False),
-                    "ternary_data.csv",
-                    "text/csv",
-                )
+                download_table("Download ternary fractions", tern, "ternary_data.csv")
         except ValueError as exc:
             st.error(str(exc))
