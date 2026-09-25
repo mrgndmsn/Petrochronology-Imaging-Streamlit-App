@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 import copy
 import re
 import numpy as np
@@ -29,9 +30,7 @@ color_by = st.selectbox("Map color", ["Concentration", "Mineral"])
 st.caption(
     "All matching maps are shown in their physical coordinates. Filters apply to the map, new selections, and the displayed/exported rows of saved selections. Saved originals remain available when filters are restored. Overlapping coordinates keep separate sample/mineral/run rows. Overlay separate samples only when their coordinate systems are comparable."
 )
-matching_overlays = filtered_saved_selections(
-    st.session_state.selections, visible_layers
-)
+matching_overlays = filtered_saved_selections(st.session_state.selections, visible_layers)
 
 
 def select_geometry(kind, geometry, name, width=0.0, sampling=None, spacing=1.0):
@@ -88,9 +87,7 @@ with st.expander("Map color scale"):
     hi = st.number_input(
         "Color maximum", value=float(np.nanpercentile(finite, 98)), key="selection_vmax"
     )
-    log_color = st.checkbox(
-        "Log10 color scale (positive values only)", key="selection_log_color"
-    )
+    log_color = st.checkbox("Log10 color scale (positive values only)", key="selection_log_color")
     scale = st.selectbox(
         "Color scale",
         ["Viridis", "Turbo", "Plasma", "Inferno", "Magma", "Cividis", "RdBu", "Jet"],
@@ -134,9 +131,7 @@ draft_vertices = st.session_state.get(f"profile_vertices::{context_key}", [])
 lasso_vertices = st.session_state.get(f"lasso_vertices::{context_key}", [])
 if draw_mode == "Lasso vertices" and lasso_vertices:
     points_to_draw = (
-        lasso_vertices + [lasso_vertices[0]]
-        if len(lasso_vertices) >= 3
-        else lasso_vertices
+        lasso_vertices + [lasso_vertices[0]] if len(lasso_vertices) >= 3 else lasso_vertices
     )
     drawing_figure.add_scattergl(
         x=[p[0] for p in points_to_draw],
@@ -146,9 +141,7 @@ if draw_mode == "Lasso vertices" and lasso_vertices:
         name="Draft lasso",
     )
 if draw_mode == "Profile vertices" and draft_vertices:
-    profile_buffer(
-        drawing_figure, draft_vertices, direct_size, new_color, "Draft profile buffer"
-    )
+    profile_buffer(drawing_figure, draft_vertices, direct_size, new_color, "Draft profile buffer")
     drawing_figure.add_scattergl(
         x=[p[0] for p in draft_vertices],
         y=[p[1] for p in draft_vertices],
@@ -205,7 +198,7 @@ event_id = getattr(event, "event_id", None)
 if event_id is not None and event_id == st.session_state.get("saved_draw_event"):
     direct_selection = {}
 
-# Spot and vertex tools share pan mode; an old click is not a new vertex.
+
 active_tool_key = f"active_selection_tool::{context_key}"
 if st.session_state.get(active_tool_key) != draw_mode:
     st.session_state[active_tool_key] = draw_mode
@@ -224,9 +217,7 @@ if (
     if draw_mode == "Spot":
         st.session_state[pending_spot_key] = clicked
     else:
-        prefix = (
-            "lasso_vertices" if draw_mode == "Lasso vertices" else "profile_vertices"
-        )
+        prefix = "lasso_vertices" if draw_mode == "Lasso vertices" else "profile_vertices"
         st.session_state.setdefault(f"{prefix}::{context_key}", []).append(clicked)
     st.rerun()
 
@@ -261,9 +252,7 @@ elif effective_mode == "Spot":
     if selected and st.button("Save clicked spot", type="primary"):
         created = (
             direct_name,
-            select_geometry(
-                "spot", (selected[0], selected[1], direct_size), direct_name
-            ),
+            select_geometry("spot", (selected[0], selected[1], direct_size), direct_name),
         )
 elif effective_mode == "Lasso vertices":
     draft_key = f"lasso_vertices::{context_key}"
@@ -296,8 +285,7 @@ else:
         st.session_state[draft_key] = []
         st.rerun()
     st.caption(
-        "Vertices: "
-        + "; ".join((f"{x:.4g},{y:.4g}" for x, y in st.session_state[draft_key]))
+        "Vertices: " + "; ".join((f"{x:.4g},{y:.4g}" for x, y in st.session_state[draft_key]))
     )
     if st.button(
         "Save clicked multi-segment profile",
@@ -306,9 +294,7 @@ else:
     ):
         created = (
             direct_name,
-            select_geometry(
-                "profile", st.session_state[draft_key], "profile", direct_size
-            ),
+            select_geometry("profile", st.session_state[draft_key], "profile", direct_size),
         )
 
 
@@ -325,35 +311,29 @@ def points(text):
 
 
 with st.expander("Exact coordinate entry (optional reproducible alternative)"):
-    st.caption(
-        "Use these controls when you need exact typed coordinates instead of mouse drawing."
-    )
+    st.caption("Use these controls when you need exact typed coordinates instead of mouse drawing.")
     tab_rect, tab_lasso, tab_spot, tab_profile = st.tabs(
         ["Rectangle domain", "Lasso domain", "Spot", "Buffered profile"]
     )
     with tab_rect:
         c = st.columns(4)
-        x0 = c[0].number_input(
-            "X minimum", value=min(float(l.x.min()) for l in visible_layers)
-        )
-        x1 = c[1].number_input(
-            "X maximum", value=max(float(l.x.max()) for l in visible_layers)
-        )
-        y0 = c[2].number_input(
-            "Y minimum", value=min(float(l.y.min()) for l in visible_layers)
-        )
-        y1 = c[3].number_input(
-            "Y maximum", value=max(float(l.y.max()) for l in visible_layers)
-        )
-        name = direct_name
+        x0 = c[0].number_input("X minimum", value=min(float(l.x.min()) for l in visible_layers))
+        x1 = c[1].number_input("X maximum", value=max(float(l.x.max()) for l in visible_layers))
+        y0 = c[2].number_input("Y minimum", value=min(float(l.y.min()) for l in visible_layers))
+        y1 = c[3].number_input("Y maximum", value=max(float(l.y.max()) for l in visible_layers))
         if st.button("Create rectangular domain"):
-            created = (name, select_geometry("rectangle", (x0, x1, y0, y1), name))
+            created = (
+                direct_name,
+                select_geometry("rectangle", (x0, x1, y0, y1), direct_name),
+            )
     with tab_lasso:
         raw = st.text_area("Polygon vertices (x,y; x,y; ...)", key="poly_points")
-        name = direct_name
         if st.button("Create lasso domain"):
             try:
-                created = (name, select_geometry("lasso", points(raw), name))
+                created = (
+                    direct_name,
+                    select_geometry("lasso", points(raw), direct_name),
+                )
             except Exception as exc:
                 st.error(str(exc))
     with tab_spot:
@@ -361,15 +341,14 @@ with st.expander("Exact coordinate entry (optional reproducible alternative)"):
         x = c[0].number_input("Spot X")
         y = c[1].number_input("Spot Y")
         radius = c[2].number_input("Radius (µm)", min_value=0.0)
-        name = direct_name
         if st.button("Pick spot"):
-            created = (name, select_geometry("spot", (x, y, radius), name))
+            created = (
+                direct_name,
+                select_geometry("spot", (x, y, radius), direct_name),
+            )
     with tab_profile:
-        raw = st.text_area(
-            "Profile vertices in order (x,y; x,y; ...)", key="profile_points"
-        )
+        raw = st.text_area("Profile vertices in order (x,y; x,y; ...)", key="profile_points")
         buffer = st.number_input("Half-width buffer (µm)", min_value=0.0)
-        name = direct_name
         sampling = st.selectbox(
             "Profile sampling",
             ["Buffered pixels", "Bilinear interpolation", "Nearest interpolation"],
@@ -381,24 +360,20 @@ with st.expander("Exact coordinate entry (optional reproducible alternative)"):
         )
         if st.button("Create buffered multi-segment profile"):
             try:
-                created = (
-                    name,
-                    (
-                        select_geometry("profile", points(raw), "profile", buffer)
-                        if sampling == "Buffered pixels"
-                        else select_geometry(
-                            "profile",
-                            points(raw),
-                            "profile",
-                            sampling=(
-                                "bilinear"
-                                if sampling.startswith("Bilinear")
-                                else "nearest"
-                            ),
-                            spacing=spacing,
-                        )
-                    ),
+                method = {
+                    "Buffered pixels": None,
+                    "Bilinear interpolation": "bilinear",
+                    "Nearest interpolation": "nearest",
+                }[sampling]
+                frame = select_geometry(
+                    "profile",
+                    points(raw),
+                    "profile",
+                    width=buffer if method is None else 0.0,
+                    sampling=method,
+                    spacing=spacing,
                 )
+                created = (direct_name, frame)
             except Exception as exc:
                 st.error(str(exc))
 if created and not created[0].strip():
@@ -447,9 +422,7 @@ if created:
 if "last_saved_selection_name" in st.session_state:
     st.success("Last saved selection: " + st.session_state.last_saved_selection_name)
 matching = filtered_saved_selections(st.session_state.selections, visible_layers)
-if st.button(
-    "Undo last selection change", disabled=not st.session_state.selection_history
-):
+if st.button("Undo last selection change", disabled=not st.session_state.selection_history):
     previous = st.session_state.selection_history.pop()
     (
         st.session_state.selections,
@@ -458,9 +431,7 @@ if st.button(
     ) = previous
     st.rerun()
 if matching:
-    chosen = st.selectbox(
-        "Saved selection", matching, format_func=lambda key: key.split("::")[-1]
-    )
+    chosen = st.selectbox("Saved selection", matching, format_func=lambda key: key.split("::")[-1])
     table = matching[chosen]
     original_count = len(st.session_state.selections[chosen])
     from core.selection_style import domain_color_picker
@@ -475,9 +446,7 @@ if matching:
         f"{len(table)} of {original_count} saved rows match the current sample/mineral/run filters."
     )
     if len(table) < original_count:
-        copy_name = st.text_input(
-            "Filtered selection name", chosen.split("::")[-1] + " filtered"
-        )
+        copy_name = st.text_input("Filtered selection name", chosen.split("::")[-1] + " filtered")
         if st.button("Save filtered subset as a new selection"):
             copy_key = f"{context_key}::{copy_name}"
             if not copy_name.strip():
@@ -502,9 +471,7 @@ if matching:
                 st.session_state.active_table_name = table_name
                 st.success(f"Saved {len(subset)} filtered pixels as {copy_name}.")
 
-    st.dataframe(
-        pd.DataFrame([selection_summary(table)]), hide_index=True, width="stretch"
-    )
+    st.dataframe(pd.DataFrame([selection_summary(table)]), hide_index=True, width="stretch")
     st.dataframe(table, width="stretch", hide_index=True)
     if "distance_along_profile_um" in table:
         skip = {
@@ -525,15 +492,12 @@ if matching:
         channels = [
             col
             for col in table.columns
-            if col not in skip
-            and pd.to_numeric(table[col], errors="coerce").notna().any()
+            if col not in skip and pd.to_numeric(table[col], errors="coerce").notna().any()
         ]
         selected_channels = st.multiselect(
             "Profile channels", channels, default=channels[: min(3, len(channels))]
         )
-        bin_count = st.number_input(
-            "Distance bins (0 keeps individual pixels)", 0, 1000, 0
-        )
+        bin_count = st.number_input("Distance bins (0 keeps individual pixels)", 0, 1000, 0)
         from core.selection_maps import profile_plot_table
 
         profile_color = st.selectbox("Profile color", ["Channel", "Mineral"])
@@ -554,9 +518,7 @@ if matching:
                 width="stretch",
             )
     a, b = st.columns(2)
-    a.download_button(
-        "Download selection", table.to_csv(index=False), "selection.csv", "text/csv"
-    )
+    download_table("Download selection", table, "selection.csv", container=a)
     if b.button("Delete selection"):
         st.session_state.selection_history.append(
             (
