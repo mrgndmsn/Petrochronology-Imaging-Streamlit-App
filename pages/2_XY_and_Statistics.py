@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 import pandas as pd
 
 import numpy as np
@@ -26,9 +27,7 @@ initialize_state()
 st.title("X–Y plots, correlation, and PCA")
 
 
-if not (
-    st.session_state.tables or st.session_state.layers or st.session_state.point_layers
-):
+if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
     st.info("Import data or run grain detection first.")
     st.stop()
 from core.data_sources import analysis_source_ui
@@ -46,18 +45,14 @@ st.caption(
     "Axis abbreviation k means ×1,000: 20k on a ppm axis is 20,000 ppm. Large extreme values expand the automatic range; logarithmic axes change spacing, not concentrations."
 )
 
-tab_xy, tab_kde, tab_corr, tab_pca = st.tabs(
-    ["X–Y", "KDE and K-S", "Correlation", "PCA"]
-)
+tab_xy, tab_kde, tab_corr, tab_pca = st.tabs(["X–Y", "KDE and K-S", "Correlation", "PCA"])
 with tab_xy:
     c1, c2, c3 = st.columns(3)
     x = persistent_selectbox("X", numbers, "xy_x", c1)
     y = persistent_selectbox("Y", numbers, "xy_y", c2, index=min(1, len(numbers) - 1))
     color_options = ["None"] + list(frame.columns)
     color = persistent_selectbox("Color/group", color_options, "xy_color", c3)
-    symbol = persistent_selectbox(
-        "Symbol by", ["None"] + list(frame.columns), "xy_symbol"
-    )
+    symbol = persistent_selectbox("Symbol by", ["None"] + list(frame.columns), "xy_symbol")
     marker_size = st.slider("Marker size", 1, 30, 6)
     colors_text = st.text_area("Category colors (category=#RRGGBB)")
     try:
@@ -72,9 +67,7 @@ with tab_xy:
     trendline = d4.checkbox("Linear regression")
     plot_frame = frame.copy()
     e1, e2, e3, e4 = st.columns(4)
-    plot_type = e1.selectbox(
-        "Plot type", ["Scatter", "2D KDE density", "Scatter + KDE overlay"]
-    )
+    plot_type = e1.selectbox("Plot type", ["Scatter", "2D KDE density", "Scatter + KDE overlay"])
     grouped_fit = e2.checkbox("One regression per group", disabled=color == "None")
     show_legend = e3.checkbox("Show legend", True)
     connect = e4.checkbox("Connect within line/profile/grain groups")
@@ -100,9 +93,7 @@ with tab_xy:
         )
     else:
         figure = go.Figure()
-        bandwidth2d = st.number_input(
-            "2D KDE bandwidth multiplier", min_value=0.05, value=1.0
-        )
+        bandwidth2d = st.number_input("2D KDE bandwidth multiplier", min_value=0.05, value=1.0)
         try:
             from core.kde_display import density_trace
 
@@ -120,13 +111,10 @@ with tab_xy:
                 "KDE contours show relative density (peak = 1). Density is estimated in log10 coordinates for axes set to log; nonpositive values on those axes are excluded."
             )
             xx, yy = np.meshgrid(gx, gy)
-            st.download_button(
+            download_table(
                 "Download 2D KDE grid",
-                pd.DataFrame(
-                    {"x": xx.ravel(), "y": yy.ravel(), "density": density.ravel()}
-                ).to_csv(index=False),
+                pd.DataFrame({"x": xx.ravel(), "y": yy.ravel(), "density": density.ravel()}),
                 "xy_kde.csv",
-                "text/csv",
             )
         except ValueError as exc:
             st.warning(str(exc))
@@ -153,11 +141,7 @@ with tab_xy:
                 figure.add_trace(trace)
     if connect:
         group_column = next(
-            (
-                c
-                for c in ["profile_id", "selection_id", "grain_uid", "grain_id"]
-                if c in plot_frame
-            ),
+            (c for c in ["profile_id", "selection_id", "grain_uid", "grain_id"] if c in plot_frame),
             None,
         )
         if group_column:
@@ -191,9 +175,7 @@ with tab_xy:
         bounds = st.columns(4)
         bounds_values = [
             bounds[i].number_input(label, value=None, key=f"xy_bound_{i}")
-            for i, label in enumerate(
-                ["X minimum", "X maximum", "Y minimum", "Y maximum"]
-            )
+            for i, label in enumerate(["X minimum", "X maximum", "Y minimum", "Y maximum"])
         ]
         for which, limits, is_log in [
             ("x", bounds_values[:2], log_x),
@@ -203,21 +185,14 @@ with tab_xy:
                 if (is_log and any(v is not None and v <= 0 for v in limits)) or (
                     None not in limits and limits[0] >= limits[1]
                 ):
-                    st.error(
-                        "Axis bounds must increase and be positive on logarithmic axes."
-                    )
+                    st.error("Axis bounds must increase and be positive on logarithmic axes.")
                 else:
                     getattr(figure, "update_" + which + "axes")(
-                        range=[
-                            np.log10(v) if is_log and v is not None else v
-                            for v in limits
-                        ]
+                        range=[np.log10(v) if is_log and v is not None else v for v in limits]
                     )
     if plot_type != "2D KDE density":
         figure.update_layout(dragmode="lasso")
-        link_key = selection_key(
-            plot_frame, (name, x, y, color, symbol, log_x, log_y, plot_type)
-        )
+        link_key = selection_key(plot_frame, (name, x, y, color, symbol, log_x, log_y, plot_type))
         event = render_chart(
             figure,
             width="stretch",
@@ -228,11 +203,10 @@ with tab_xy:
         linked_map_ui(selected_rows(plot_frame, event), st.session_state)
     else:
         render_chart(figure, width="stretch")
-    st.download_button(
+    download_table(
         "Download filtered X-Y data",
-        plot_frame.drop(columns=[ROW_ID]).to_csv(index=False),
+        plot_frame.drop(columns=[ROW_ID]),
         "xy_plot_data.csv",
-        "text/csv",
     )
 
 with tab_kde:
@@ -252,9 +226,7 @@ with tab_kde:
     kde_summary = st.selectbox("KDE observations", ["Raw rows", "Means per unit"])
     if kde_summary == "Means per unit":
         units = [
-            c
-            for c in ("grain_uid", "selection_id", "profile_id", "grain_id")
-            if c in kde_frame
+            c for c in ("grain_uid", "selection_id", "profile_id", "grain_id") if c in kde_frame
         ]
         if units:
             unit = st.selectbox("KDE mean unit", units)
@@ -267,9 +239,7 @@ with tab_kde:
                     ]
                 )
             )
-            kde_frame = (
-                kde_frame.groupby(keys, dropna=False)[value].mean().reset_index()
-            )
+            kde_frame = kde_frame.groupby(keys, dropna=False)[value].mean().reset_index()
         else:
             st.warning("This table has no grain, selection, or profile unit column.")
     if log:
@@ -288,9 +258,7 @@ with tab_kde:
             curve = kde_curve(sub[value], bandwidth)
             curve["group"] = str(label)
             curves.append(curve)
-            kde_fig.add_scatter(
-                x=curve.value, y=curve.density, mode="lines", name=str(label)
-            )
+            kde_fig.add_scatter(x=curve.value, y=curve.density, mode="lines", name=str(label))
         except ValueError as exc:
             st.caption(f"{label}: {exc}")
     kde_fig.update_layout(
@@ -301,24 +269,14 @@ with tab_kde:
     kde_fig.update_layout(legend_title=None if group == "None" else group)
     render_chart(kde_fig, width="stretch")
     if curves:
-        st.download_button(
-            "Download KDE curves",
-            pd.concat(curves).to_csv(index=False),
-            "kde_curves.csv",
-            "text/csv",
-        )
+        download_table("Download KDE curves", pd.concat(curves), "kde_curves.csv")
     if group != "None":
         st.caption(
             "K-S p-values compare the selected observations and are unadjusted for multiple comparisons. Adjacent pixels may be correlated; use independent grain/domain means when interpreting population differences."
         )
         comparisons = ks_group_comparisons(kde_frame, value, group)
         st.dataframe(comparisons, width="stretch", hide_index=True)
-        st.download_button(
-            "Download K-S comparisons",
-            comparisons.to_csv(index=False),
-            "ks_comparisons.csv",
-            "text/csv",
-        )
+        download_table("Download K-S comparisons", comparisons, "ks_comparisons.csv")
 
 with tab_corr:
     selected = st.multiselect(
@@ -339,12 +297,7 @@ with tab_corr:
         render_chart(fig, width="stretch")
         ranked = ranked_correlations(frame, selected, method)
         st.dataframe(ranked, width="stretch", hide_index=True)
-        st.download_button(
-            "Download ranked correlations",
-            ranked.to_csv(index=False),
-            "ranked_correlations.csv",
-            "text/csv",
-        )
+        download_table("Download ranked correlations", ranked, "ranked_correlations.csv")
         st.download_button(
             "Download correlation matrix",
             corr.to_csv(),
@@ -380,9 +333,7 @@ with tab_pca:
     )
     fingerprint = hashlib.sha256(
         repr(fingerprint_columns).encode()
-        + pd.util.hash_pandas_object(
-            frame[fingerprint_columns], index=True
-        ).values.tobytes()
+        + pd.util.hash_pandas_object(frame[fingerprint_columns], index=True).values.tobytes()
     ).hexdigest()
     if st.session_state.get("pca_fingerprint") != fingerprint:
         st.session_state.pop("pca_output", None)
@@ -391,9 +342,9 @@ with tab_pca:
         try:
             pca_frame = frame.reset_index(drop=True)
             scores, loadings, variance = run_pca(pca_frame, selected)
-            st.session_state["pca_pixel_source"] = pca_frame.loc[
-                scores.index
-            ].reset_index(drop=True)
+            st.session_state["pca_pixel_source"] = pca_frame.loc[scores.index].reset_index(
+                drop=True
+            )
             st.session_state["pca_output"] = (scores, loadings, variance)
             st.session_state["pca_source"] = name
             st.session_state["pca_fingerprint"] = fingerprint
@@ -445,18 +396,14 @@ with tab_pca:
             st.session_state,
             key_prefix="pca",
         )
-        st.caption(
-            "Lasso or box-select PCA scores to highlight their pixels on matching maps."
-        )
+        st.caption("Lasso or box-select PCA scores to highlight their pixels on matching maps.")
         left, right = st.columns(2)
         left.subheader("Loadings")
         left.dataframe(loadings, width="stretch")
         right.subheader("Explained variance")
         right.dataframe(variance.to_frame(), width="stretch")
 
-        st.download_button(
-            "Download PCA scores", scores.to_csv(), "pca_scores.csv", "text/csv"
-        )
+        st.download_button("Download PCA scores", scores.to_csv(), "pca_scores.csv", "text/csv")
         st.download_button(
             "Download PCA loadings", loadings.to_csv(), "pca_loadings.csv", "text/csv"
         )
@@ -480,12 +427,7 @@ with tab_pca:
         color = st.selectbox("PCA group/color", ["None"] + list(frame.columns))
         drivers = rank_pca_drivers(loadings, variance, int(top))
         st.dataframe(drivers, width="stretch", hide_index=True)
-        st.download_button(
-            "Download PCA driver ranks",
-            drivers.to_csv(index=False),
-            "pca_driver_ranks.csv",
-            "text/csv",
-        )
+        download_table("Download PCA driver ranks", drivers, "pca_driver_ranks.csv")
         if "PC2" in loadings:
             biplot = pca_biplot(
                 scores,
