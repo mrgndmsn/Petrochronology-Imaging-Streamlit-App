@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 
 import pandas as pd
 import plotly.express as px
@@ -9,7 +10,6 @@ from core.io import numeric_columns
 from core.state import initialize_state
 from core.ui_filters import filter_table_ui
 
-
 st.set_page_config(page_title="Grain comparison", page_icon="🔬", layout="wide")
 initialize_state()
 st.title("Compare grains across samples and minerals")
@@ -17,11 +17,7 @@ if not st.session_state.grain_results:
     st.info("Detect grains for at least one sample first.")
     st.stop()
 
-available = [
-    l
-    for l in st.session_state.layers.values()
-    if l.key in st.session_state.grain_results
-]
+available = [l for l in st.session_state.layers.values() if l.key in st.session_state.grain_results]
 if not available:
     st.info("No detected grain maps are available.")
     st.stop()
@@ -75,21 +71,14 @@ else:
 fig.update_layout(template="plotly_white")
 render_chart(fig, width="stretch")
 counts = (
-    grains.groupby(
-        [c for c in ["sample_id", "mineral_id", "run_id"] if c in grains], dropna=False
-    )
+    grains.groupby([c for c in ["sample_id", "mineral_id", "run_id"] if c in grains], dropna=False)
     .size()
     .rename("n_grains")
     .reset_index()
 )
 st.dataframe(counts, width="stretch", hide_index=True)
 a, b = st.columns(2)
-a.download_button(
-    "Download filtered grain means",
-    grains.to_csv(index=False),
-    "grain_comparison.csv",
-    "text/csv",
-)
+download_table("Download filtered grain means", grains, "grain_comparison.csv", container=a)
 selected_uids = set(grains.grain_uid.astype(str)) if "grain_uid" in grains else set()
 selected_pixels = (
     pixels[pixels.grain_uid.astype(str).isin(selected_uids)]
