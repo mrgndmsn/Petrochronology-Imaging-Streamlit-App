@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 import pandas as pd
 
 import numpy as np
@@ -11,10 +12,7 @@ from core.provenance import enrich_selection
 from core.mineral_layers import mineral_layers_ui
 from core.state import initialize_state
 
-
-st.set_page_config(
-    page_title="Mineral spatial statistics", page_icon="🧭", layout="wide"
-)
+st.set_page_config(page_title="Mineral spatial statistics", page_icon="🧭", layout="wide")
 initialize_state()
 mineral_points = mineral_layers_ui(st.session_state, "spatial")
 st.title("Mineral boundaries and nearest-neighbor statistics")
@@ -89,9 +87,7 @@ with tab_boundary:
             value_layer = matches[0]
             phase = np.isfinite(source.values) & (source.values > threshold)
             if boundary_grain is not None:
-                phase = (
-                    st.session_state.grain_results[source.key].labels == boundary_grain
-                )
+                phase = st.session_state.grain_results[source.key].labels == boundary_grain
             table = boundary_buffer_stats(value_layer, phase, width)
             table["selection_type"] = "boundary_buffer"
             table["selection_id"] = f"Boundary | {source.key}"
@@ -104,9 +100,9 @@ with tab_boundary:
             parts.append(table)
             values.append(value_layer)
             halos.append(boundary_halo_figure(value_layer, phase, width))
-            st.session_state.tables[
-                f"Boundary buffer | {source.key} | {value_layer.channel}"
-            ] = table
+            st.session_state.tables[f"Boundary buffer | {source.key} | {value_layer.channel}"] = (
+                table
+            )
         if halos:
             from core.selection_maps import map_overlay_figure
             from core.mineral_colors import mineral_palette
@@ -148,27 +144,20 @@ with tab_boundary:
                     width="stretch",
                 )
                 st.dataframe(
-                    table.groupby(
-                        ["sample_id", "mineral_id", "run_id", "inside_phase"]
-                    ).value.agg(["count", "mean", "median", "std"]),
+                    table.groupby(["sample_id", "mineral_id", "run_id", "inside_phase"]).value.agg(
+                        ["count", "mean", "median", "std"]
+                    ),
                     width="stretch",
                 )
             else:
                 st.info("No finite chemistry pixels lie within this buffer.")
-            st.download_button(
-                "Download boundary pixels",
-                table.to_csv(index=False),
-                "boundary_buffer.csv",
-                "text/csv",
-            )
+            download_table("Download boundary pixels", table, "boundary_buffer.csv")
 with tab_nn:
     if mineral_points:
         st.caption(
             "Each selected sample/run is analyzed separately; no distances are calculated between unrelated runs or samples."
         )
-        maximum = st.number_input(
-            "Maximum sampled pixels per mineral", 10, 100000, 5000
-        )
+        maximum = st.number_input("Maximum sampled pixels per mineral", 10, 100000, 5000)
         if st.button("Calculate all directional mineral pairs", type="primary"):
             from core.desktop_tools import mineral_nearest_neighbor_tables
 
@@ -178,9 +167,7 @@ with tab_nn:
         table = st.session_state.get("nn_distances", pd.DataFrame())
         summary = st.session_state.get("nn_summary", pd.DataFrame())
         if not table.empty:
-            identities = {
-                (l.sample_id, l.run_id, l.mineral_id) for l in mineral_points.values()
-            }
+            identities = {(l.sample_id, l.run_id, l.mineral_id) for l in mineral_points.values()}
 
             def visible_pairs(frame):
                 if frame.empty:
@@ -211,17 +198,15 @@ with tab_nn:
                 width="stretch",
             )
             st.dataframe(summary, width="stretch", hide_index=True)
-            st.download_button(
+            download_table(
                 "Download directional distances",
-                table.to_csv(index=False),
+                table,
                 "nearest_neighbor_distances.csv",
-                "text/csv",
             )
-            st.download_button(
+            download_table(
                 "Download nearest-neighbor summary",
-                summary.to_csv(index=False),
+                summary,
                 "nearest_neighbor_summary.csv",
-                "text/csv",
             )
     else:
         st.info(
