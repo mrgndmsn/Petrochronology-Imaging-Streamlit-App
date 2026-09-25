@@ -117,12 +117,18 @@ if draw_mode == "Spot" and pending_spot is not None:
     drawing_figure.add_scattergl(
         x=pending_spot[0] + radius * np.cos(angle),
         y=pending_spot[1] + radius * np.sin(angle),
-        mode="lines", line=dict(color=new_color, width=3), name="Unsaved spot",
+        mode="lines",
+        line=dict(color=new_color, width=3),
+        name="Unsaved spot",
     )
     drawing_figure.add_scattergl(
-        x=[pending_spot[0]], y=[pending_spot[1]], mode="markers+text",
-        text=[direct_name], textposition="top center",
-        marker=dict(color=new_color, size=9), name="Spot center",
+        x=[pending_spot[0]],
+        y=[pending_spot[1]],
+        mode="markers+text",
+        text=[direct_name],
+        textposition="top center",
+        marker=dict(color=new_color, size=9),
+        name="Spot center",
     )
 draft_vertices = st.session_state.get(f"profile_vertices::{context_key}", [])
 lasso_vertices = st.session_state.get(f"lasso_vertices::{context_key}", [])
@@ -199,16 +205,28 @@ event_id = getattr(event, "event_id", None)
 if event_id is not None and event_id == st.session_state.get("saved_draw_event"):
     direct_selection = {}
 
+# Spot and vertex tools share pan mode; an old click is not a new vertex.
+active_tool_key = f"active_selection_tool::{context_key}"
+if st.session_state.get(active_tool_key) != draw_mode:
+    st.session_state[active_tool_key] = draw_mode
+    direct_selection = {}
+    st.session_state["processed_selection_click"] = (context_key, draw_mode, event_id)
+
 clicked = selected_point(direct_selection)
 click_token = (context_key, draw_mode, event_id)
-if (clicked is not None and event_id is not None
-        and draw_mode in ("Spot", "Lasso vertices", "Profile vertices")
-        and st.session_state.get("processed_selection_click") != click_token):
+if (
+    clicked is not None
+    and event_id is not None
+    and draw_mode in ("Spot", "Lasso vertices", "Profile vertices")
+    and st.session_state.get("processed_selection_click") != click_token
+):
     st.session_state["processed_selection_click"] = click_token
     if draw_mode == "Spot":
         st.session_state[pending_spot_key] = clicked
     else:
-        prefix = "lasso_vertices" if draw_mode == "Lasso vertices" else "profile_vertices"
+        prefix = (
+            "lasso_vertices" if draw_mode == "Lasso vertices" else "profile_vertices"
+        )
         st.session_state.setdefault(f"{prefix}::{context_key}", []).append(clicked)
     st.rerun()
 
@@ -373,7 +391,9 @@ with st.expander("Exact coordinate entry (optional reproducible alternative)"):
                             points(raw),
                             "profile",
                             sampling=(
-                                "bilinear" if sampling.startswith("Bilinear") else "nearest"
+                                "bilinear"
+                                if sampling.startswith("Bilinear")
+                                else "nearest"
                             ),
                             spacing=spacing,
                         )
