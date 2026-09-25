@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.exports import download_table
 
 import numpy as np
 import plotly.express as px
@@ -18,14 +19,11 @@ from core.io import numeric_columns
 from core.mineral_layers import mineral_layers_ui
 from core.state import initialize_state
 
-
 st.set_page_config(page_title="Spatial analysis tools", page_icon="📈", layout="wide")
 initialize_state()
 mineral_points = mineral_layers_ui(st.session_state, "summary")
 st.title("Spatial analysis tools")
-tabs = st.tabs(
-    ["Mineral summaries", "Boundary comparisons", "Profile summaries", "Grouped U–Pb"]
-)
+tabs = st.tabs(["Mineral summaries", "Boundary comparisons", "Profile summaries", "Grouped U–Pb"])
 
 with tabs[0]:
     if not mineral_points:
@@ -36,21 +34,15 @@ with tabs[0]:
         st.caption(
             "Pixels counts measured points; it is not ppm. The concentration variation plot below is separate."
         )
-        all_channels = sorted(
-            {c for layer in mineral_points.values() for c in layer.channels}
-        )
-        categories = st.radio(
-            "Fraction categories", ["Minerals", "Saved domains"], horizontal=True
-        )
+        all_channels = sorted({c for layer in mineral_points.values() for c in layer.channels})
+        categories = st.radio("Fraction categories", ["Minerals", "Saved domains"], horizontal=True)
         if categories == "Saved domains":
             from core.domain_fractions import domain_fraction_ui
 
             domain_fraction_ui(mineral_points, st.session_state)
         else:
             mode = st.selectbox("Fraction value", ["pixels", "sum", "mean"])
-            all_channels = sorted(
-                {c for x in mineral_points.values() for c in x.channels}
-            )
+            all_channels = sorted({c for x in mineral_points.values() for c in x.channels})
             value = (
                 st.selectbox("Channel", all_channels, disabled=mode == "pixels")
                 if all_channels
@@ -77,12 +69,7 @@ with tabs[0]:
                     title="Stacked mineral fractions",
                 )
                 render_chart(stack, width="stretch")
-                st.download_button(
-                    "Download mineral fractions",
-                    fractions.to_csv(index=False),
-                    "mineral_fractions.csv",
-                    "text/csv",
-                )
+                download_table("Download mineral fractions", fractions, "mineral_fractions.csv")
         from core.desktop_tools import ordered_channels, element_fraction_table
 
         st.subheader("Mean concentration and variation")
@@ -122,16 +109,13 @@ with tabs[0]:
             )
             render_chart(figure, width="stretch")
             st.dataframe(variability, width="stretch", hide_index=True)
-            st.download_button(
+            download_table(
                 "Download element variability",
-                variability.to_csv(index=False),
+                variability,
                 "mineral_element_variability.csv",
-                "text/csv",
             )
             st.subheader("Element contributions by mineral")
-            fraction_stat = st.selectbox(
-                "Element fraction basis", ["Mean ppm", "Sum of pixel ppm"]
-            )
+            fraction_stat = st.selectbox("Element fraction basis", ["Mean ppm", "Sum of pixel ppm"])
             contributions = element_fraction_table(
                 mineral_points,
                 channels,
@@ -172,17 +156,14 @@ with tabs[0]:
                     ),
                     width="stretch",
                 )
-            st.download_button(
+            download_table(
                 "Download ordered element fractions",
-                contributions.to_csv(index=False),
+                contributions,
                 "element_fractions.csv",
-                "text/csv",
             )
 
 with tabs[1]:
-    candidates = {
-        name: df for name, df in st.session_state.tables.items() if "inside_phase" in df
-    }
+    candidates = {name: df for name, df in st.session_state.tables.items() if "inside_phase" in df}
     if not candidates:
         st.info("Run a mineral boundary-buffer analysis first.")
     else:
@@ -201,17 +182,17 @@ with tabs[1]:
             st.dataframe(summary, width="stretch", hide_index=True)
             st.dataframe(pairs, width="stretch", hide_index=True)
             a, b = st.columns(2)
-            a.download_button(
+            download_table(
                 "Download boundary differences",
-                summary.to_csv(index=False),
+                summary,
                 "boundary_differences.csv",
-                "text/csv",
+                container=a,
             )
-            b.download_button(
+            download_table(
                 "Download boundary ratio pairs",
-                pairs.to_csv(index=False),
+                pairs,
                 "boundary_ratio_pairs.csv",
-                "text/csv",
+                container=b,
             )
 
 with tabs[2]:
@@ -247,12 +228,9 @@ with tabs[2]:
         )
         group = st.selectbox(
             "Separate/color profiles",
-            ["None"]
-            + [c for c in ["profile_id", "profile_number", "grain_id"] if c in frame],
+            ["None"] + [c for c in ["profile_id", "profile_number", "grain_id"] if c in frame],
         )
-        color_groups = st.text_input(
-            "Profile color groups (example: 1,2=Core set; 3,4=Rim set)"
-        )
+        color_groups = st.text_input("Profile color groups (example: 1,2=Core set; 3,4=Rim set)")
         if color_groups and "profile_number" in frame:
             frame = frame.copy()
             frame["profile_color_group"] = frame["profile_number"].astype(str)
@@ -267,18 +245,14 @@ with tabs[2]:
                 ] = label.strip()
             group = "profile_color_group"
         bins = st.number_input("Distance bins", 2, 500, 50)
-        envelope = st.selectbox(
-            "Envelope", ["Median + IQR", "Median + 10–90%", "Mean ± SD"]
-        )
+        envelope = st.selectbox("Envelope", ["Median + IQR", "Median + 10–90%", "Mean ± SD"])
         positive_only = st.checkbox("Ignore zero/negative values", value=True)
         robust = st.checkbox("Remove extreme IQR outliers", value=True)
         log_y = st.checkbox("Log Y axis")
         axis_mode = st.selectbox(
             "Y-axis layout", ["Shared axis", "Separate panel for each variable"]
         )
-        y_range_text = st.text_area(
-            "Custom Y ranges (one per line; example: U238_ppm=0,500)"
-        )
+        y_range_text = st.text_area("Custom Y ranges (one per line; example: U238_ppm=0,500)")
         if values:
             result = profile_envelope(
                 frame,
@@ -291,9 +265,7 @@ with tabs[2]:
                 robust,
             )
             fig = (
-                make_subplots(
-                    rows=len(values), cols=1, shared_xaxes=True, subplot_titles=values
-                )
+                make_subplots(rows=len(values), cols=1, shared_xaxes=True, subplot_titles=values)
                 if axis_mode.startswith("Separate")
                 else go.Figure()
             )
@@ -303,11 +275,7 @@ with tabs[2]:
                     map(str, identity if isinstance(identity, tuple) else (identity,))
                 )
                 channel = identity[0] if isinstance(identity, tuple) else identity
-                row = (
-                    values.index(channel) + 1
-                    if axis_mode.startswith("Separate")
-                    else None
-                )
+                row = values.index(channel) + 1 if axis_mode.startswith("Separate") else None
                 for trace in [
                     go.Scatter(
                         x=part.x,
@@ -326,18 +294,10 @@ with tabs[2]:
                         name=label + " envelope",
                         opacity=0.18,
                     ),
-                    go.Scatter(
-                        x=part.x, y=part["mean"], mode="lines+markers", name=label
-                    ),
+                    go.Scatter(x=part.x, y=part["mean"], mode="lines+markers", name=label),
                 ]:
-                    (
-                        fig.add_trace(trace, row=row, col=1)
-                        if row
-                        else fig.add_trace(trace)
-                    )
-            fig.update_layout(
-                template="plotly_white", xaxis_title=x, yaxis_title="Value"
-            )
+                    (fig.add_trace(trace, row=row, col=1) if row else fig.add_trace(trace))
+            fig.update_layout(template="plotly_white", xaxis_title=x, yaxis_title="Value")
             if log_y:
                 fig.update_yaxes(type="log")
             y_ranges = {}
@@ -346,15 +306,8 @@ with tabs[2]:
                     continue
                 channel_name, bounds = line.split("=", 1)
                 try:
-                    low, high = [
-                        float(v.strip())
-                        for v in bounds.replace(":", ",").split(",")[:2]
-                    ]
-                    if (
-                        not np.isfinite([low, high]).all()
-                        or low >= high
-                        or (log_y and low <= 0)
-                    ):
+                    low, high = [float(v.strip()) for v in bounds.replace(":", ",").split(",")[:2]]
+                    if not np.isfinite([low, high]).all() or low >= high or (log_y and low <= 0):
                         raise ValueError("Invalid axis bounds")
                     y_ranges[channel_name.strip()] = [low, high]
                 except (TypeError, ValueError):
@@ -373,11 +326,7 @@ with tabs[2]:
                         )
             elif len(values) == 1 and values[0] in y_ranges:
                 fig.update_yaxes(
-                    range=(
-                        np.log10(y_ranges[values[0]]).tolist()
-                        if log_y
-                        else y_ranges[values[0]]
-                    )
+                    range=(np.log10(y_ranges[values[0]]).tolist() if log_y else y_ranges[values[0]])
                 )
             render_chart(fig, width="stretch")
             st.download_button(
@@ -386,12 +335,7 @@ with tabs[2]:
                 "profile_figure.html",
                 "text/html",
             )
-            st.download_button(
-                "Download binned profiles",
-                result.to_csv(index=False),
-                "binned_profiles.csv",
-                "text/csv",
-            )
+            download_table("Download binned profiles", result, "binned_profiles.csv")
 
 with tabs[3]:
     if not st.session_state.tables:
@@ -435,9 +379,4 @@ with tabs[3]:
         if "Not selected" not in ratios and len(set(ratios)) == 3:
             means = grouped_upb_means(frame, groups, ratios, ratio_method)
             st.dataframe(means, width="stretch", hide_index=True)
-            st.download_button(
-                "Download grouped U–Pb means",
-                means.to_csv(index=False),
-                "grouped_upb_means.csv",
-                "text/csv",
-            )
+            download_table("Download grouped U–Pb means", means, "grouped_upb_means.csv")
