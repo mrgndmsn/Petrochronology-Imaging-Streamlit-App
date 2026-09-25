@@ -14,7 +14,6 @@ from core.provenance import compatible_layers
 from core.definitions import make_definition, register_definition, replay_definitions
 from core.project_io import save_project, load_project
 
-
 st.set_page_config(page_title="Workspace tools", layout="wide")
 initialize_state()
 st.title("Workspace channel tools")
@@ -95,9 +94,7 @@ with calc:
             created.metadata["definition_id"] = definition["id"]
             register_definition(st.session_state.calculation_definitions, definition)
             st.session_state.layers[created.key] = created
-            st.session_state.tables[f"Calculated map | {created.key}"] = (
-                created.pixel_table()
-            )
+            st.session_state.tables[f"Calculated map | {created.key}"] = created.pixel_table()
             replay_definitions(
                 st.session_state.layers,
                 st.session_state.tables,
@@ -180,11 +177,7 @@ with alias:
             definition = make_definition(
                 "alias",
                 target,
-                (
-                    "*"
-                    if future_alias
-                    else (layer.sample_id, layer.mineral_id, layer.run_id)
-                ),
+                ("*" if future_alias else (layer.sample_id, layer.mineral_id, layer.run_id)),
                 sources=sources,
                 rule=rule,
             )
