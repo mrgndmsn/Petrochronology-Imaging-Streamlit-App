@@ -84,7 +84,7 @@ def combined_map_figure(layers, overlays, color_by, palette, **display):
         overlays,
         color_by,
         palette,
-        selectable=color_by != "Mineral",
+        selectable=True,
         **display,
     )
 
@@ -126,10 +126,14 @@ def filtered_saved_selections(selections, layers):
         ids = ["sample_id", "mineral_id", "run_id"]
         if set(ids).issubset(table.columns):
             # Domains belong to the dataset, not only the channel used to draw them.
-            identities = {tuple(str(getattr(layer, c)) for c in ids) for layer in layers}
+            identities = {
+                tuple(str(getattr(layer, c)) for c in ids) for layer in layers
+            }
             mask = pd.Series(
-                [tuple(map(str, row)) in identities
-                 for row in table[ids].itertuples(index=False, name=None)],
+                [
+                    tuple(map(str, row)) in identities
+                    for row in table[ids].itertuples(index=False, name=None)
+                ],
                 index=table.index,
             )
         elif "source_layer_key" in table:
@@ -199,7 +203,10 @@ def map_overlay_figure(
             color = palette[layer.mineral_id]
             options.update(
                 colorscale=[[0, color], [1, color]],
-                vmin=0, vmax=1, log_color=False, show_colorbar=False,
+                vmin=0,
+                vmax=1,
+                log_color=False,
+                show_colorbar=False,
             )
         current = map_figure(
             render_layer,
@@ -213,10 +220,13 @@ def map_overlay_figure(
         if mineral_raster:
             background = current.data[0]
             background.update(
-                customdata=None, name=layer.mineral_id,
-                legendgroup=layer.mineral_id, showlegend=True,
+                customdata=None,
+                name=layer.mineral_id,
+                legendgroup=layer.mineral_id,
+                showlegend=True,
                 meta={"color_by": "mineral_id"},
-                hoverongaps=False, zsmooth=False,
+                hoverongaps=False,
+                zsmooth=False,
                 hovertemplate="X=%{x}<br>Y=%{y}<extra>%{fullData.name}</extra>",
             )
             backgrounds.append(background)
