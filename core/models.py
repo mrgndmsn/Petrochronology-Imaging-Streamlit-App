@@ -72,7 +72,7 @@ class MapLayer:
         return self.x[columns], self.y[rows]
 
     def fractional_indices(self, xs, ys):
-        """Physical X,Y to fractional column,row indices; affine grids extrapolate."""
+
         from scipy.interpolate import interp1d, LinearNDInterpolator
 
         xs, ys = np.broadcast_arrays(np.asarray(xs, float), np.asarray(ys, float))
@@ -93,18 +93,11 @@ class MapLayer:
         xx, yy = self.coordinate_grids()
         rr, cc = np.indices(xx.shape)
         design = np.column_stack((np.ones(xx.size), cc.ravel(), rr.ravel()))
-        fit = np.linalg.lstsq(
-            design, np.column_stack((xx.ravel(), yy.ravel())), rcond=None
-        )[0]
+        fit = np.linalg.lstsq(design, np.column_stack((xx.ravel(), yy.ravel())), rcond=None)[0]
         predicted = design @ fit
-        if np.allclose(
-            predicted, np.column_stack((xx.ravel(), yy.ravel())), rtol=0, atol=1e-6
-        ):
+        if np.allclose(predicted, np.column_stack((xx.ravel(), yy.ravel())), rtol=0, atol=1e-6):
             matrix = fit[1:].T
-            result = (
-                np.stack((xs - fit[0, 0], ys - fit[0, 1]), axis=-1)
-                @ np.linalg.pinv(matrix).T
-            )
+            result = np.stack((xs - fit[0, 0], ys - fit[0, 1]), axis=-1) @ np.linalg.pinv(matrix).T
             return result[..., 0], result[..., 1]
         points = np.column_stack((xx.ravel(), yy.ravel()))
         query = np.column_stack((xs.ravel(), ys.ravel()))
@@ -154,8 +147,7 @@ class PointLayer:
         return [
             str(c)
             for c in self.frame.columns
-            if c not in excluded
-            and pd.to_numeric(self.frame[c], errors="coerce").notna().any()
+            if c not in excluded and pd.to_numeric(self.frame[c], errors="coerce").notna().any()
         ]
 
 
