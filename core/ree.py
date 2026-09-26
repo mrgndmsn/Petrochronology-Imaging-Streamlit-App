@@ -1,88 +1,30 @@
 import numpy as np
 import pandas as pd
 
-REE_NORMALIZATION_VALUES = {
-    "BSE": {
-        "Ce": 1.675,
-        "Dy": 0.674,
-        "Er": 0.438,
-        "Eu": 0.154,
-        "Gd": 0.544,
-        "Ho": 0.149,
-        "La": 0.648,
-        "Lu": 0.0675,
-        "Nd": 1.25,
-        "Pr": 0.254,
-        "Sm": 0.406,
-        "Tb": 0.099,
-        "Tm": 0.068,
-        "Yb": 0.441,
-    },
-    "CHUR": {
-        "Ce": 0.613,
-        "Dy": 0.246,
-        "Er": 0.16,
-        "Eu": 0.058,
-        "Gd": 0.199,
-        "Ho": 0.0546,
-        "La": 0.237,
-        "Lu": 0.0246,
-        "Nd": 0.457,
-        "Pr": 0.0928,
-        "Sm": 0.153,
-        "Tb": 0.0361,
-        "Tm": 0.0247,
-        "Yb": 0.161,
-    },
-    "CI": {
-        "Ce": 0.613,
-        "Dy": 0.246,
-        "Er": 0.16,
-        "Eu": 0.058,
-        "Gd": 0.199,
-        "Ho": 0.0546,
-        "La": 0.237,
-        "Lu": 0.0246,
-        "Nd": 0.457,
-        "Pr": 0.0928,
-        "Sm": 0.153,
-        "Tb": 0.0361,
-        "Tm": 0.0247,
-        "Yb": 0.161,
-    },
-    "MORB": {
-        "Ce": 7.5,
-        "Dy": 4.55,
-        "Er": 2.97,
-        "Eu": 1.02,
-        "Gd": 3.68,
-        "Ho": 1.01,
-        "La": 2.5,
-        "Lu": 0.455,
-        "Nd": 7.3,
-        "Pr": 1.32,
-        "Sm": 2.63,
-        "Tb": 0.67,
-        "Tm": 0.456,
-        "Yb": 3.05,
-    },
-}
-REE_ORDER = [
-    "La",
-    "Ce",
-    "Pr",
-    "Nd",
-    "Sm",
-    "Eu",
-    "Gd",
-    "Tb",
-    "Dy",
-    "Ho",
-    "Er",
-    "Tm",
-    "Yb",
-    "Lu",
-]
+REE_NORMALIZATION_VALUES = (
+    pd.DataFrame(
+        [
+            ("La", 0.648, 0.237, 0.237, 2.5),
+            ("Ce", 1.675, 0.613, 0.613, 7.5),
+            ("Pr", 0.254, 0.0928, 0.0928, 1.32),
+            ("Nd", 1.25, 0.457, 0.457, 7.3),
+            ("Sm", 0.406, 0.153, 0.153, 2.63),
+            ("Eu", 0.154, 0.058, 0.058, 1.02),
+            ("Gd", 0.544, 0.199, 0.199, 3.68),
+            ("Tb", 0.099, 0.0361, 0.0361, 0.67),
+            ("Dy", 0.674, 0.246, 0.246, 4.55),
+            ("Ho", 0.149, 0.0546, 0.0546, 1.01),
+            ("Er", 0.438, 0.16, 0.16, 2.97),
+            ("Tm", 0.068, 0.0247, 0.0247, 0.456),
+            ("Yb", 0.441, 0.161, 0.161, 3.05),
+            ("Lu", 0.0675, 0.0246, 0.0246, 0.455),
+        ],
+        columns=["element", "BSE", "CHUR", "CI", "MORB"],
+    )
+    .set_index("element")
+    .to_dict()
+)
+REE_ORDER = list(REE_NORMALIZATION_VALUES["CI"])
 
 
 def normalize_ree(frame, mapping, standard="CI"):
@@ -91,30 +33,19 @@ def normalize_ree(frame, mapping, standard="CI"):
     constants = REE_NORMALIZATION_VALUES[standard]
     bad = set(mapping) - set(REE_ORDER)
     if bad or any(c not in frame for c in mapping.values()):
-        raise ValueError(
-            "Unknown element or missing concentration column in REE mapping."
-        )
+        raise ValueError("Unknown element or missing concentration column in REE mapping.")
     out = pd.DataFrame(index=frame.index)
     for element in REE_ORDER:
         if element in mapping:
-            v = (
-                pd.to_numeric(frame[mapping[element]], errors="coerce")
-                / constants[element]
-            )
+            v = pd.to_numeric(frame[mapping[element]], errors="coerce") / constants[element]
             out[element] = v.where(np.isfinite(v) & (v > 0))
     return out
 
 
-def ree_statistics(
-    frame, mapping, standard="CI", group=None, iqr=False, multiplier=1.5
-):
+def ree_statistics(frame, mapping, standard="CI", group=None, iqr=False, multiplier=1.5):
     if not np.isfinite(multiplier) or multiplier <= 0:
         raise ValueError("IQR multiplier must be positive and finite.")
-    groups = (
-        frame.groupby(group, dropna=False, sort=False)
-        if group
-        else [("All data", frame)]
-    )
+    groups = frame.groupby(group, dropna=False, sort=False) if group else [("All data", frame)]
     rows = []
     for label, subset in groups:
         norm = normalize_ree(subset, mapping, standard)
@@ -123,11 +54,7 @@ def ree_statistics(
             if iqr and len(v) >= 4:
                 q1, q3 = v.quantile([0.25, 0.75])
                 if q3 > q1:
-                    v = v[
-                        v.between(
-                            q1 - multiplier * (q3 - q1), q3 + multiplier * (q3 - q1)
-                        )
-                    ]
+                    v = v[v.between(q1 - multiplier * (q3 - q1), q3 + multiplier * (q3 - q1))]
             n = len(v)
             logs = np.log(v)
             row = {
@@ -168,9 +95,7 @@ def ree_envelope(stats, mode):
         return mean - width, mean + width
     if mode in ("p16_84", "p025_975"):
         suffix = "1" if mode == "p16_84" else "2"
-        return stats["lower" + suffix].to_numpy(float), stats[
-            "upper" + suffix
-        ].to_numpy(float)
+        return stats["lower" + suffix].to_numpy(float), stats["upper" + suffix].to_numpy(float)
     if mode in ("logsd1", "logsd2"):
         k = 1 if mode == "logsd1" else 2
         gm, ls = stats.geometric_mean.to_numpy(float), stats.log_sd.to_numpy(float)
@@ -197,9 +122,7 @@ def prepare_ternary(frame, a, b, c):
         raise ValueError("Choose three distinct ternary axes.")
     out = frame.copy()
     vals = out[[a, b, c]].apply(pd.to_numeric, errors="coerce")
-    valid = (
-        np.isfinite(vals).all(axis=1) & (vals >= 0).all(axis=1) & (vals.sum(axis=1) > 0)
-    )
+    valid = np.isfinite(vals).all(axis=1) & (vals >= 0).all(axis=1) & (vals.sum(axis=1) > 0)
     out = out.loc[valid].copy()
     vals = vals.loc[valid]
     out["ternary_total"] = vals.sum(axis=1)
