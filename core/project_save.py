@@ -1,5 +1,3 @@
-"""Project snapshots shared by Home and the Save Project page."""
-
 from datetime import datetime
 import json
 import streamlit as st
@@ -18,7 +16,7 @@ def capture_tab_settings(state):
         from .page_memory import portable_widget_key
 
         values[portable_widget_key(key)] = value
-    # These palettes are data shared by controls, not widget values themselves.
+
     for key in ("chart_category_colors", "linked_highlight_style"):
         if key in state:
             values[key] = state[key]
@@ -35,9 +33,7 @@ def restore_tab_settings(state):
 
     settings = {portable_widget_key(k): v for k, v in settings.items()}
     state["_remembered_widget_keys"] = [
-        k
-        for k in settings
-        if k not in ("chart_category_colors", "linked_highlight_style")
+        k for k in settings if k not in ("chart_category_colors", "linked_highlight_style")
     ]
     for key, value in settings.items():
         state[key] = value
