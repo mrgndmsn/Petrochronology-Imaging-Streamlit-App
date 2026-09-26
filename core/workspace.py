@@ -5,8 +5,6 @@ from .models import MapLayer
 from .provenance import compatible_layers
 from .analysis import evaluate_equation
 
-"""Explicit dataset operations shared by the UI and calculation tests."""
-
 
 def calculated_layers(layers, reference, name, expression):
     if not name.strip() or "::" in name:
@@ -18,11 +16,7 @@ def calculated_layers(layers, reference, name, expression):
     values = evaluate_equation(frame, expression)
     if np.isscalar(values):
         values = pd.Series(values, index=frame.index)
-    values = (
-        pd.Series(values, index=frame.index)
-        .replace([np.inf, -np.inf], np.nan)
-        .to_numpy(float)
-    )
+    values = pd.Series(values, index=frame.index).replace([np.inf, -np.inf], np.nan).to_numpy(float)
     layer = MapLayer(
         reference.sample_id,
         reference.mineral_id,
@@ -55,9 +49,7 @@ def exclusion_mask(values, operator, threshold=0.0, upper=None):
         return valid & (values == threshold)
     if operator == "Between":
         if upper is None or not np.isfinite(upper) or upper < threshold:
-            raise ValueError(
-                "Upper threshold must be finite and at least the lower threshold."
-            )
+            raise ValueError("Upper threshold must be finite and at least the lower threshold.")
         return valid & (values >= threshold) & (values <= upper)
     raise ValueError("Unknown exclusion operator.")
 
@@ -68,9 +60,7 @@ def exclude_pixels(
     if mask.shape != reference.values.shape:
         raise ValueError("Exclusion mask shape mismatch.")
     targets = (
-        [reference]
-        if scope == "Selected channel only"
-        else compatible_layers(reference, layers)
+        [reference] if scope == "Selected channel only" else compatible_layers(reference, layers)
     )
     if scope == "All aligned data channels":
         masks = {"presence", "present", "mask", "mineral_presence", "mineral type"}
@@ -92,15 +82,12 @@ def exclude_pixels(
             )
             if all(c in frame for c in ("row_index", "column_index")):
                 selected = np.array(
-                    [
-                        (r, c) in rejected
-                        for r, c in zip(frame.row_index, frame.column_index)
-                    ]
+                    [(r, c) in rejected for r, c in zip(frame.row_index, frame.column_index)]
                 )
             elif all(c in frame for c in ("x", "y")):
                 selected = np.array([(x, y) in xy for x, y in zip(frame.x, frame.y)])
             else:
-                # Summary rows are recomputed after changing their input pixels.
+
                 selected = np.full(
                     len(frame),
                     any(c in frame for c in ("grain_id", "n_pixels", "value_mean")),
@@ -114,13 +101,11 @@ def exclude_pixels(
                         source_values = (
                             same
                             & selected
-                            & changed.channel.astype(str)
-                            .eq(reference.channel)
-                            .to_numpy()
+                            & changed.channel.astype(str).eq(reference.channel).to_numpy()
                         )
                         changed.loc[source_values, "value"] = np.nan
                     collection[key] = changed
-                # Tables containing other channels retain their rows and values.
+
             else:
                 collection[key] = frame.loc[~(same & selected)].copy()
     for key, result in list(grain_results.items()):
@@ -161,7 +146,7 @@ def rename_channel(layers, source_key, new_name, tables, selections, grains):
                     frame.loc[same, old] = np.nan
                     if same.all():
                         collection[key] = frame.drop(columns=old)
-    # Existing shape/chemistry summaries contain old channel-derived names; rebuild explicitly.
+
     for key, result in list(grains.items()):
         if result.layer_key == source_key:
             del grains[key]
@@ -230,14 +215,10 @@ def invalidate_dataset_products(reference, tables, selections, grains, centers):
         for key, frame in list(collection.items()):
             if all(c in frame for c in ids):
                 same = np.logical_and.reduce(
-                    [
-                        frame[c].astype(str).eq(v).to_numpy()
-                        for c, v in zip(ids, identity)
-                    ]
+                    [frame[c].astype(str).eq(v).to_numpy() for c, v in zip(ids, identity)]
                 )
                 if any(
-                    c in frame
-                    for c in ("grain_id", "selection_id", "row_index", "column_index")
+                    c in frame for c in ("grain_id", "selection_id", "row_index", "column_index")
                 ):
                     collection[key] = frame.loc[~same].copy()
     prefix = "::".join(identity) + "::"
@@ -278,9 +259,7 @@ def rename_identity(state, old_identity, new_identity, scope="Dataset"):
             identity_map[before] = after
             layer.sample_id, layer.mineral_id, layer.run_id = after
             if layer.key in rebuilt:
-                raise ValueError(
-                    "Renaming would interfere with an existing layer identity."
-                )
+                raise ValueError("Renaming would interfere with an existing layer identity.")
             key_map[key] = layer.key
             rebuilt[layer.key] = layer
         out[field] = rebuilt
@@ -337,12 +316,8 @@ def rename_identity(state, old_identity, new_identity, scope="Dataset"):
         table_names[name] = renamed
         rebuilt[renamed] = rename_frame(frame)
     out["tables"] = rebuilt
-    out["selections"] = {
-        rename_key(k): rename_frame(f) for k, f in out["selections"].items()
-    }
-    out["manual_grain_centers"] = {
-        rename_key(k): v for k, v in out["manual_grain_centers"].items()
-    }
+    out["selections"] = {rename_key(k): rename_frame(f) for k, f in out["selections"].items()}
+    out["manual_grain_centers"] = {rename_key(k): v for k, v in out["manual_grain_centers"].items()}
     rebuilt = {}
     for key, result in out["grain_results"].items():
         result.layer_key = rename_key(result.layer_key)
@@ -366,12 +341,12 @@ def rename_identity(state, old_identity, new_identity, scope="Dataset"):
 
 
 def store_grain_result(state, reference, updated):
-    """Replace a grain set without deleting independently drawn domains."""
+
     key = reference.key
     old = state.grain_results.get(key)
     identity = (reference.sample_id, reference.mineral_id, reference.run_id)
     ids = ("sample_id", "mineral_id", "run_id")
-    # A moved center remains valid only if that grain's footprint did not change.
+
     for center_key in list(state.manual_grain_centers):
         if not center_key.startswith(key + "::"):
             continue
@@ -393,9 +368,7 @@ def store_grain_result(state, reference, updated):
             if "grain_layer_key" in frame:
                 same &= frame.grain_layer_key.astype(str).eq(key).to_numpy()
             elif any(
-                name.endswith(other_key)
-                for other_key in state.grain_results
-                if other_key != key
+                name.endswith(other_key) for other_key in state.grain_results if other_key != key
             ):
                 continue
             if not same.any():
@@ -435,7 +408,7 @@ def store_grain_result(state, reference, updated):
                     ]
                 collection[name] = changed
             elif "grain_id" in frame and "selection_id" not in frame:
-                # Derived shape/chemistry summaries must be replaced, not left stale.
+
                 collection[name] = frame.loc[~same].copy()
     state.grain_results[key] = updated
     state.tables[f"Grain means | {key}"] = updated.shape_table
