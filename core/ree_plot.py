@@ -1,13 +1,9 @@
-"""REE summary rendering with explicit handling of log-axis limits."""
-
 import numpy as np
 from .ree import REE_ORDER, ree_envelope
 
 
-def add_ree_summary(
-    figure, stats, envelope, colors, log=True, log_floor=None, opacity=0.25
-):
-    """Return plotted/exportable bounds and messages; never alter statistical bounds."""
+def add_ree_summary(figure, stats, envelope, colors, log=True, log_floor=None, opacity=0.25):
+
     plotted = stats.copy()
     plotted["lower"], plotted["upper"] = ree_envelope(stats, envelope)
     center = "geometric_mean" if envelope in ("logsd1", "logsd2") else "mean"
@@ -26,9 +22,7 @@ def add_ree_summary(
         if not np.isfinite(log_floor) or log_floor <= 0:
             raise ValueError("The log display floor must be positive and finite.")
         clipped = (
-            np.isfinite(plotted.lower)
-            & (plotted.lower < log_floor)
-            & (plotted.upper > log_floor)
+            np.isfinite(plotted.lower) & (plotted.lower < log_floor) & (plotted.upper > log_floor)
         )
         plotted.loc[clipped, "display_lower"] = log_floor
         plotted.loc[clipped, "lower_clipped_for_log"] = True
@@ -47,8 +41,7 @@ def add_ree_summary(
         if log:
             valid &= (low > 0) & (high > 0)
         indices = np.flatnonzero(valid)
-        # Do not invent values across missing elements. Single-element intervals
-        # get vertical bounds so sparse mappings still show their uncertainty.
+
         segments = np.split(indices, np.where(np.diff(x[indices]) != 1)[0] + 1)
         for seg in segments:
             if not len(seg):
