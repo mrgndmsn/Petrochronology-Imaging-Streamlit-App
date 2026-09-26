@@ -11,9 +11,7 @@ def finite_numeric(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return result.replace([np.inf, -np.inf], np.nan)
 
 
-def correlation_matrix(
-    frame: pd.DataFrame, columns: list[str], method="pearson"
-) -> pd.DataFrame:
+def correlation_matrix(frame: pd.DataFrame, columns: list[str], method="pearson") -> pd.DataFrame:
     return finite_numeric(frame, columns).corr(method=method)
 
 
@@ -43,7 +41,7 @@ def run_pca(frame: pd.DataFrame, columns: list[str], components=4):
 
 
 def evaluate_equation(frame: pd.DataFrame, equation: str) -> pd.Series:
-    # Expressions are evaluated against the selected table using pandas syntax.
+
     result = frame.eval(equation, engine="python")
     return pd.to_numeric(result, errors="coerce")
 
@@ -65,21 +63,15 @@ def iqr_filter(frame, columns, multiplier=1.5):
 
 def ks_group_comparisons(frame, value_column, group_column):
     rows = []
-    groups = list(frame.groupby(group_column, dropna=False))
-    for index, (name_a, a) in enumerate(groups):
-        va = (
-            pd.to_numeric(a[value_column], errors="coerce")
-            .replace([np.inf, -np.inf], np.nan)
-            .dropna()
-            .to_numpy(float)
+    groups = [
+        (
+            name,
+            finite_numeric(part, [value_column])[value_column].dropna().to_numpy(float),
         )
-        for name_b, b in groups[index + 1 :]:
-            vb = (
-                pd.to_numeric(b[value_column], errors="coerce")
-                .replace([np.inf, -np.inf], np.nan)
-                .dropna()
-                .to_numpy(float)
-            )
+        for name, part in frame.groupby(group_column, dropna=False)
+    ]
+    for index, (name_a, va) in enumerate(groups):
+        for name_b, vb in groups[index + 1 :]:
             if len(va) and len(vb):
                 result = ks_2samp(va, vb)
                 rows.append(
@@ -96,7 +88,7 @@ def ks_group_comparisons(frame, value_column, group_column):
 
 
 def kde_curve(values, bandwidth=1.0, points=256, grid=None):
-    """Gaussian KDE using Scott's bandwidth times a user multiplier."""
+
     from scipy.stats import gaussian_kde
 
     values = np.asarray(pd.to_numeric(pd.Series(values), errors="coerce"), float)
@@ -121,17 +113,13 @@ def kde_grid(frame, x, y, bandwidth=1.0, points=80):
 
     values = finite_numeric(frame, [x, y]).dropna().to_numpy(float).T
     if values.shape[1] < 3 or np.linalg.matrix_rank(np.cov(values)) < 2:
-        raise ValueError(
-            "2D KDE requires three or more non-collinear finite observations."
-        )
+        raise ValueError("2D KDE requires three or more non-collinear finite observations.")
     if not np.isfinite(bandwidth) or bandwidth <= 0:
         raise ValueError("Bandwidth must be positive and finite.")
     model = gaussian_kde(values)
     model.set_bandwidth(model.factor * bandwidth)
     pad = 3 * np.sqrt(np.diag(model.covariance))
-    gx, gy = [
-        np.linspace(v.min() - p, v.max() + p, int(points)) for v, p in zip(values, pad)
-    ]
+    gx, gy = [np.linspace(v.min() - p, v.max() + p, int(points)) for v, p in zip(values, pad)]
     xx, yy = np.meshgrid(gx, gy)
     return gx, gy, model(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
 
@@ -159,9 +147,7 @@ def rank_pca_drivers(loadings, variance, top_n=8):
     rows = []
     for pc in list(loadings)[:4]:
         ranked = (
-            loadings[pc]
-            .reindex(loadings[pc].abs().sort_values(ascending=False).index)
-            .head(top_n)
+            loadings[pc].reindex(loadings[pc].abs().sort_values(ascending=False).index).head(top_n)
         )
         for rank, (variable, loading) in enumerate(ranked.items(), 1):
             rows.append(
@@ -216,9 +202,7 @@ def pca_biplot(scores, loadings, variance, top_labels=10, colors=None):
     return figure
 
 
-def assign_custom_groups(
-    frame, source, mapping_csv, target="plot_group", unmatched="Ungrouped"
-):
+def assign_custom_groups(frame, source, mapping_csv, target="plot_group", unmatched="Ungrouped"):
     from io import StringIO
 
     mapping = pd.read_csv(StringIO(mapping_csv), dtype=str, keep_default_na=False)
