@@ -1,5 +1,3 @@
-"""Shared ratio preparation and explicitly labelled spatial summary errors."""
-
 import re
 import numpy as np
 import pandas as pd
@@ -14,19 +12,13 @@ def prepare_ratios(
     for code in ("68", "75", "76"):
         column, error = ratios.get(code), errors.get(code)
         frame["r" + code] = (
-            pd.to_numeric(source[column], errors="coerce")
-            if column in source
-            else np.nan
+            pd.to_numeric(source[column], errors="coerce") if column in source else np.nan
         )
         frame["s" + code] = (
-            pd.to_numeric(source[error], errors="coerce") * factor
-            if error in source
-            else np.nan
+            pd.to_numeric(source[error], errors="coerce") * factor if error in source else np.nan
         )
     frame["rho_68_76"] = (
-        pd.to_numeric(source[rho], errors="coerce")
-        if isinstance(rho, str)
-        else float(rho)
+        pd.to_numeric(source[rho], errors="coerce") if isinstance(rho, str) else float(rho)
     )
     for code in ("68", "75", "76"):
         frame["s" + code] = frame["s" + code].where(frame["s" + code] >= 0)
@@ -39,33 +31,27 @@ def prepare_ratios(
         frame.r75 = uranium_ratio * a * b
         var = uranium_ratio**2 * (b * b * va + a * a * vb + 2 * a * b * cov)
         frame.s75 = np.sqrt(var.clip(lower=0))
-        frame.rho_wetherill = (
-            uranium_ratio * (b * va + a * cov) / (frame.s68 * frame.s75)
-        )
+        frame.rho_wetherill = uranium_ratio * (b * va + a * cov) / (frame.s68 * frame.s75)
     return frame
 
 
 def spatial_means(frame, groups, basis="SEM", product=False, uranium_ratio=U238_U235):
-    """Paired finite rows; SEM assumes independent sampling units, SD is dispersion."""
+
     rows = []
-    for key, part in (
-        frame.groupby(groups, dropna=False)
-        if groups
-        else [("All selected rows", frame)]
-    ):
+    grouped = frame.groupby(groups, dropna=False) if groups else [("All selected rows", frame)]
+    for key, part in grouped:
         key = key if isinstance(key, tuple) else (key,)
         out = dict(zip(groups, key))
-        # A repeated row at the same known position is not another observation.
+
         loc = [c for c in ("sample_id", "mineral_id", "run_id", "x", "y") if c in part]
         if "x" in loc and "y" in loc:
             part = part.drop_duplicates(
                 loc + [c for c in ("r68", "r75", "r76") if c in part]
             ).reset_index(drop=True)
-        required = (
-            ["r68", "r76"]
-            if product
-            else [c for c in ("r68", "r75", "r76") if np.isfinite(part[c]).any()]
-        )
+        if product:
+            required = ["r68", "r76"]
+        else:
+            required = [c for c in ("r68", "r75", "r76") if np.isfinite(part[c]).any()]
         if not required:
             continue
         numeric = part[required].replace([np.inf, -np.inf], np.nan).dropna()
@@ -104,13 +90,9 @@ def spatial_means(frame, groups, basis="SEM", product=False, uranium_ratio=U238_
             a, b = m.r68, m.r76
             out["r75"] = uranium_ratio * a * b
             variance = uranium_ratio**2 * (
-                b * b * cov.loc["r68", "r68"]
-                + a * a * cov.loc["r76", "r76"]
-                + 2 * a * b * c6876
+                b * b * cov.loc["r68", "r68"] + a * a * cov.loc["r76", "r76"] + 2 * a * b * c6876
             )
-            out["s75"] = (
-                np.sqrt(max(0.0, variance)) if np.isfinite(variance) else np.nan
-            )
+            out["s75"] = np.sqrt(max(0.0, variance)) if np.isfinite(variance) else np.nan
             c6875 = uranium_ratio * (b * cov.loc["r68", "r68"] + a * c6876)
         for label, c, a, b in [
             ("rho_wetherill", c6875, out["s68"], out["s75"]),
@@ -128,7 +110,6 @@ def upb_input_ui(state):
 
     with st.expander("Decay constants and uranium isotope ratio"):
         remembered_input(
-            "upb",
             st.number_input,
             "238U decay constant (yr⁻¹)",
             min_value=1e-15,
@@ -137,7 +118,6 @@ def upb_input_ui(state):
             key="upb_l238",
         )
         remembered_input(
-            "upb",
             st.number_input,
             "235U decay constant (yr⁻¹)",
             min_value=1e-15,
@@ -146,7 +126,6 @@ def upb_input_ui(state):
             key="upb_l235",
         )
         remembered_input(
-            "upb",
             st.number_input,
             "238U/235U",
             min_value=0.0001,
@@ -189,15 +168,13 @@ def upb_input_ui(state):
                 candidates, needle + suffix, needle.removeprefix("Final ") + suffix
             )
             target[code] = remembered_input(
-                "upb",
                 cols[i].selectbox,
-                f'{kind} {needle.removeprefix("Final ")}',
+                f"{kind} {needle.removeprefix('Final ')}",
                 choices,
                 index=choices.index(guess) if guess in choices else 0,
                 key="upb_" + prefix + code,
             )
     derive = remembered_input(
-        "upb",
         st.radio,
         "207Pb/235U source",
         [
@@ -212,7 +189,6 @@ def upb_input_ui(state):
     factor = (
         0.5
         if remembered_input(
-            "upb",
             st.radio,
             "Input error convention",
             ["2σ absolute", "1σ absolute"],
@@ -222,7 +198,6 @@ def upb_input_ui(state):
         else 1.0
     )
     rho = remembered_input(
-        "upb",
         st.selectbox,
         "Input correlation: 206Pb/238U with 207Pb/206Pb",
         ["Assume zero"] + choices[1:],
@@ -239,7 +214,6 @@ def upb_input_ui(state):
     )
     if not derive:
         w = remembered_input(
-            "upb",
             st.selectbox,
             "Input correlation: 207Pb/235U with 206Pb/238U",
             ["Assume zero"] + choices[1:],
@@ -248,7 +222,6 @@ def upb_input_ui(state):
         if w != "Assume zero":
             frame["rho_wetherill"] = pd.to_numeric(source[w], errors="coerce")
     mode = remembered_input(
-        "upb",
         st.radio,
         "Plot points as",
         ["Individual rows", "Group means"],
@@ -270,26 +243,17 @@ def upb_input_ui(state):
             )
             if c in frame
         ]
-        default = [
-            c for c in ("sample_id", "mineral_id", "run_id", "selection_id") if c in ids
-        ]
+        default = [c for c in ("sample_id", "mineral_id", "run_id", "selection_id") if c in ids]
         groups = remembered_input(
-            "upb",
-            st.multiselect,
-            "Group means by",
-            ids,
-            default=default,
-            key="upb_groups",
+            st.multiselect, "Group means by", ids, default=default, key="upb_groups"
         )
         basis = remembered_input(
-            "upb",
             st.radio,
             "Group uncertainty",
             ["SEM of mean (independent pixels)", "SD of pixels (dispersion only)"],
             key="upb_basis",
         )
         product = derive and remembered_input(
-            "upb",
             st.radio,
             "Grouped 207Pb/235U",
             [
@@ -310,7 +274,6 @@ def upb_input_ui(state):
         )
         accepted = (
             remembered_input(
-                "upb",
                 st.checkbox,
                 "The grouped pixels are independent observations, not resampled duplicates",
                 key="upb_independent",
@@ -329,13 +292,9 @@ def upb_input_ui(state):
         st.info("No finite paired ratios in these groups.")
         st.stop()
     colors = ["None"] + [
-        c
-        for c in frame
-        if not c.startswith(("r68", "r75", "r76", "s68", "s75", "s76", "rho_"))
+        c for c in frame if not c.startswith(("r68", "r75", "r76", "s68", "s75", "s76", "rho_"))
     ]
-    color = remembered_input(
-        "upb", st.selectbox, "Color points by", colors, key="upb_color"
-    )
+    color = remembered_input(st.selectbox, "Color points by", colors, key="upb_color")
     return (
         frame.reset_index(drop=True),
         None if color == "None" else color,
@@ -352,9 +311,7 @@ def scatter(frame, x, y, color, state, **kwargs):
     if color and not pd.api.types.is_numeric_dtype(frame[color]):
         frame = frame.copy()
         frame[color] = frame[color].fillna("(missing)").astype(str)
-        palette = group_colors(
-            frame[color], color, state, "Saved group colors", "Plotly"
-        )
+        palette = group_colors(frame[color], color, state, "Saved group colors", "Plotly")
     return px.scatter(
         frame,
         x=x,
@@ -378,7 +335,7 @@ def compact_render(fig, key):
 
 
 def ellipse_colors(frame, color, state, reference=None):
-    """Match covariance outlines to the point's categorical or numeric color."""
+
     import plotly.express as px
     from .ree_colors import group_colors
 
@@ -404,8 +361,6 @@ def ellipse_colors(frame, color, state, reference=None):
     normalized = (values - finite.min()) / span if span > 0 else values * 0 + 0.5
     return normalized.map(
         lambda v: (
-            px.colors.sample_colorscale("Viridis", [float(v)])[0]
-            if np.isfinite(v)
-            else "gray"
+            px.colors.sample_colorscale("Viridis", [float(v)])[0] if np.isfinite(v) else "gray"
         )
     )
