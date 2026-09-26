@@ -1,5 +1,3 @@
-"""Analysis sources combine equivalent observations across datasets, not analysis levels."""
-
 from core.page_memory import remembered_input as _remembered_input
 import numpy as np
 import pandas as pd
@@ -12,6 +10,11 @@ DERIVED_PREFIXES = (
     "Calculated map |",
     "Line profile",
 )
+
+
+def combine_tables(parts):
+    parts = list(parts)
+    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
 
 
 def imported_observations(state):
@@ -42,10 +45,10 @@ def imported_observations(state):
             "mineral_id",
             "run_id",
         }.issubset(frame):
-            # The editable maps are authoritative after collapse, exclusions or column math.
-            mapped = pd.MultiIndex.from_frame(
-                frame[["sample_id", "mineral_id", "run_id"]]
-            ).isin(raster_identities)
+
+            mapped = pd.MultiIndex.from_frame(frame[["sample_id", "mineral_id", "run_id"]]).isin(
+                raster_identities
+            )
             frame = frame.loc[~mapped].copy()
             if frame.empty:
                 continue
@@ -55,9 +58,7 @@ def imported_observations(state):
             identities.update(
                 map(
                     tuple,
-                    frame[["sample_id", "mineral_id", "run_id"]]
-                    .drop_duplicates()
-                    .to_numpy(),
+                    frame[["sample_id", "mineral_id", "run_id"]].drop_duplicates().to_numpy(),
                 )
             )
     for layer in state.get("point_layers", {}).values():
@@ -85,11 +86,11 @@ def imported_observations(state):
         frame["source_table"] = layer.key
         parts.append(frame)
         identities.add(identity)
-    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
+    return combine_tables(parts)
 
 
 def selection_means(state):
-    """One arithmetic mean per saved selection and dataset; ignore missing values."""
+
     parts = []
     identifiers = ["sample_id", "mineral_id", "run_id", "selection_id", "profile_id"]
     excluded = {
@@ -123,7 +124,7 @@ def selection_means(state):
         means = means.reset_index()
         means["selection_key"] = key
         parts.append(means)
-    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
+    return combine_tables(parts)
 
 
 def analysis_source_ui(state, key, label="Data source", tables=None):
@@ -143,23 +144,12 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
             "All saved selections",
             "All selection means (domains, spots and profiles)",
         ] + list(tables)
-    name = _remembered_input(
-        "data_sources:52:9",
-        st.selectbox,
-        label,
-        list(dict.fromkeys(names)),
-        key=key + "_source",
-    )
+    name = _remembered_input(st.selectbox, label, list(dict.fromkeys(names)), key=key + "_source")
     if name == all_label:
-        frame = (
-            (
-                pd.concat(list(tables.values()), ignore_index=True, sort=False)
-                if tables
-                else pd.DataFrame()
-            )
-            if all_label == "All matching tables"
-            else imported_observations(state)
-        )
+        if all_label == "All imported observations":
+            frame = imported_observations(state)
+        else:
+            frame = combine_tables(tables.values())
     elif name in ("All grain means", "All grain pixels"):
         results = list(state.get("grain_results", {}).values())
         channels = list(
@@ -171,22 +161,14 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
         )
         if channels:
             channel = _remembered_input(
-                "data_sources:59:20",
                 st.selectbox,
                 "Grain detection channel",
                 channels,
                 key=key + "_grain_channel",
             )
-            results = [
-                r for r in results if state["layers"][r.layer_key].channel == channel
-            ]
-        parts = [
-            r.shape_table if name == "All grain means" else r.pixel_table
-            for r in results
-        ]
-        frame = (
-            pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
-        )
+            results = [r for r in results if state["layers"][r.layer_key].channel == channel]
+        parts = [r.shape_table if name == "All grain means" else r.pixel_table for r in results]
+        frame = combine_tables(parts)
     elif name == "All selection means (domains, spots and profiles)":
         frame = selection_means(state)
         st.caption(
@@ -194,9 +176,7 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
         )
     elif name == "All saved selections":
         parts = list(state.get("selections", {}).values())
-        frame = (
-            pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
-        )
+        frame = combine_tables(parts)
         st.caption("Selections may overlap; their rows remain separate observations.")
     else:
         frame = tables[name]
