@@ -1,5 +1,3 @@
-"""Display the same raster buffer used for boundary statistics."""
-
 from dataclasses import replace
 import numpy as np
 import plotly.graph_objects as go
@@ -8,13 +6,10 @@ from .selections import boundary_buffer_stats
 
 
 def boundary_halo_figure(layer, phase, width, grain_labels=None):
-    # Geometry includes unmeasured cells; statistical selection still excludes them.
-    cells = boundary_buffer_stats(
-        replace(layer, values=np.ones_like(layer.values)), phase, width
-    )
+
+    cells = boundary_buffer_stats(replace(layer, values=np.ones_like(layer.values)), phase, width)
     if grain_labels is not None:
-        # Calculate each label independently so touching grains retain their
-        # internal contact, then draw each halo only once.
+
         import pandas as pd
 
         parts = [
