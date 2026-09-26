@@ -1,5 +1,3 @@
-"""A session-wide pixel highlight, restricted to visible dataset identities."""
-
 IDS = ["sample_id", "mineral_id", "run_id"]
 
 
@@ -27,22 +25,15 @@ def selected_pixel_trace(
 
     layers = list(state.get("layers", {}).values())
     layer = next(
-        (
-            l
-            for l in layers
-            if tuple(str(getattr(l, c)) for c in IDS) == tuple(map(str, identity))
-        ),
+        (l for l in layers if tuple(str(getattr(l, c)) for c in IDS) == tuple(map(str, identity))),
         None,
     )
     name = "Selected: " + " / ".join(map(str, identity))
     if style == "Filled pixels" and layer is not None:
         dx, dy = layer.pixel_size
-        if len(group) >= 2000 and _raster_highlight(
-            figure, group, dx, dy, name, color, opacity
-        ):
+        if len(group) >= 2000 and _raster_highlight(figure, group, dx, dy, name, color, opacity):
             return
-        # Separate closed rectangles preserve each measured pixel's physical
-        # footprint and gaps; zooming does not change the highlight size.
+
         x = (
             np.asarray(group.x, float)[:, None]
             + np.array([-0.5, 0.5, 0.5, -0.5, -0.5, np.nan]) * dx
@@ -81,7 +72,7 @@ def selected_pixel_trace(
 
 
 def _raster_highlight(figure, group, dx, dy, name, color, opacity):
-    """Render aligned selections as an exact mask instead of six vertices per pixel."""
+
     import numpy as np
 
     x, y = np.asarray(group.x, float), np.asarray(group.y, float)
