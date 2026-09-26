@@ -1,5 +1,4 @@
-"""Resolve scatter selections by row identity, never by concentration equality."""
-
+from core.exports import download_table
 from core.page_memory import remembered_input as _remembered_input
 import hashlib
 from collections.abc import Mapping
@@ -12,15 +11,13 @@ IDS = ["sample_id", "mineral_id", "run_id"]
 
 
 def selection_key(frame, settings):
-    digest = hashlib.sha256(
-        pd.util.hash_pandas_object(frame, index=True).values.tobytes()
-    )
+    digest = hashlib.sha256(pd.util.hash_pandas_object(frame, index=True).values.tobytes())
     digest.update(repr(settings).encode())
     return "xy_link_" + digest.hexdigest()[:20]
 
 
 def selection_row_id(data):
-    """Read only an explicit integral row ID; never infer it from trace indices."""
+
     if isinstance(data, Mapping):
         if ROW_ID in data:
             data = data[ROW_ID]
@@ -33,10 +30,8 @@ def selection_row_id(data):
                 dtype = np.dtype(data["dtype"])
                 if dtype.kind not in "iu" or dtype.itemsize > 8:
                     return None
-                values = np.frombuffer(
-                    base64.b64decode(data["bdata"], validate=True), dtype=dtype
-                )
-                # A whole trace's array cannot identify a single selected point.
+                values = np.frombuffer(base64.b64decode(data["bdata"], validate=True), dtype=dtype)
+
                 if values.size != 1:
                     return None
                 data = values[0]
@@ -52,9 +47,7 @@ def selection_row_id(data):
         return None
     try:
         value = int(data)
-        if isinstance(data, (float, np.floating)) and (
-            not np.isfinite(data) or data != value
-        ):
+        if isinstance(data, (float, np.floating)) and (not np.isfinite(data) or data != value):
             return None
         return value
     except (ValueError, TypeError, OverflowError):
@@ -91,13 +84,9 @@ def spatial_rows(selected, state):
                 f["x"] = pd.to_numeric(f[a], errors="coerce")
                 f["y"] = pd.to_numeric(f[b], errors="coerce")
                 valid = np.isfinite(f[["x", "y"]].to_numpy(float)).all(axis=1)
-                return f.loc[valid].drop_duplicates(IDS + ["x", "y"]), int(
-                    (~valid).sum()
-                )
-    # Raster rows need one array lookup per dataset, not one dataframe per pixel.
-    if {"row_index", "column_index"}.issubset(
-        selected
-    ) and "selection_key" not in selected:
+                return f.loc[valid].drop_duplicates(IDS + ["x", "y"]), int((~valid).sum())
+
+    if {"row_index", "column_index"}.issubset(selected) and "selection_key" not in selected:
         parts = []
         unmapped = 0
         for identity, group in selected.groupby(IDS, dropna=False, sort=False):
@@ -105,8 +94,7 @@ def spatial_rows(selected, state):
                 (
                     l
                     for l in state.get("layers", {}).values()
-                    if tuple(str(getattr(l, c)) for c in IDS)
-                    == tuple(map(str, identity))
+                    if tuple(str(getattr(l, c)) for c in IDS) == tuple(map(str, identity))
                 ),
                 None,
             )
@@ -126,9 +114,7 @@ def spatial_rows(selected, state):
                 & (c < layer.values.shape[1])
             )
             f = group.loc[valid].copy()
-            f["x"], f["y"] = layer.coordinates_at(
-                r[valid].astype(int), c[valid].astype(int)
-            )
+            f["x"], f["y"] = layer.coordinates_at(r[valid].astype(int), c[valid].astype(int))
             finite = np.isfinite(f[["x", "y"]].to_numpy(float)).all(axis=1)
             unmapped += int((~valid).sum()) + int((~finite).sum())
             parts.append(f.loc[finite])
@@ -149,9 +135,7 @@ def spatial_rows(selected, state):
                 mask = np.ones(len(source), dtype=bool)
                 for column in IDS + ["selection_id", "profile_id"]:
                     if column in source and column in row and pd.notna(row[column]):
-                        mask &= (
-                            source[column].astype(str).eq(str(row[column])).to_numpy()
-                        )
+                        mask &= source[column].astype(str).eq(str(row[column])).to_numpy()
                 pixels, missing = spatial_rows(
                     source.loc[mask].drop(columns="selection_key", errors="ignore"),
                     state,
@@ -159,7 +143,7 @@ def spatial_rows(selected, state):
                 parts.append(pixels)
                 unmapped += missing
             continue
-        # Grain summary rows have centroids, not pixel X/Y: expand the label mask.
+
         if (
             "grain_uid" in row
             and not {"row_index", "column_index"}.issubset(row.index)
@@ -168,10 +152,7 @@ def spatial_rows(selected, state):
             found = False
             for result in state.get("grain_results", {}).values():
                 layer = state.get("layers", {}).get(result.layer_key)
-                if (
-                    layer is None
-                    or tuple(str(getattr(layer, c)) for c in IDS) != identity
-                ):
+                if layer is None or tuple(str(getattr(layer, c)) for c in IDS) != identity:
                     continue
                 if (
                     "channel" in row
@@ -246,9 +227,7 @@ def spatial_rows(selected, state):
     if not parts:
         return pd.DataFrame(), unmapped
     return (
-        pd.concat(parts, ignore_index=True, sort=False).drop_duplicates(
-            IDS + ["x", "y"]
-        ),
+        pd.concat(parts, ignore_index=True, sort=False).drop_duplicates(IDS + ["x", "y"]),
         unmapped,
     )
 
@@ -281,38 +260,31 @@ def linked_map_ui(selected, state, key_prefix="xy"):
         "These pixels remain highlighted on matching maps when you change pages. Use Clear linked highlight on a map to remove them."
     )
     identities = {
-        tuple(str(row[c]) for c in IDS)
-        for _, row in spatial[IDS].drop_duplicates().iterrows()
+        tuple(str(row[c]) for c in IDS) for _, row in spatial[IDS].drop_duplicates().iterrows()
     }
     layers = [
-        l
-        for l in state.layers.values()
-        if tuple(str(getattr(l, c)) for c in IDS) in identities
+        l for l in state.layers.values() if tuple(str(getattr(l, c)) for c in IDS) in identities
     ]
     channel_choices = list(dict.fromkeys(l.channel for l in layers))
     mode = _remembered_input(
-        "xy_link:95:9",
         st.selectbox,
         "Linked map coloring",
         ["Element", "Mineral"],
         key=key_prefix + "_link_map_mode",
     )
     style = _remembered_input(
-        "linked_style",
         st.selectbox,
         "Selected pixel style",
         ["Circles", "Filled pixels"],
         key=key_prefix + "_highlight_style",
     )
     highlight_color = _remembered_input(
-        "linked_color",
         st.color_picker,
         "Selected pixel color",
         "#00ffff",
         key=key_prefix + "_highlight_color",
     )
     highlight_opacity = _remembered_input(
-        "linked_opacity",
         st.slider,
         "Highlight opacity",
         0.1,
@@ -325,7 +297,6 @@ def linked_map_ui(selected, state, key_prefix="xy"):
     )
     if channel_choices:
         channel = _remembered_input(
-            "xy_link:97:16",
             st.selectbox,
             "Linked map element",
             channel_choices,
@@ -336,7 +307,6 @@ def linked_map_ui(selected, state, key_prefix="xy"):
         if mode == "Element":
             with st.expander("Linked element color scale", expanded=True):
                 scale = _remembered_input(
-                    "linked_scale",
                     st.selectbox,
                     "Color scale",
                     [
@@ -351,20 +321,15 @@ def linked_map_ui(selected, state, key_prefix="xy"):
                     key=key_prefix + "_map_scale",
                 )
                 log_color = _remembered_input(
-                    "linked_log",
-                    st.checkbox,
-                    "Log10 element colors",
-                    key=key_prefix + "_map_log",
+                    st.checkbox, "Log10 element colors", key=key_prefix + "_map_log"
                 )
                 vmin = _remembered_input(
-                    "linked_min",
                     st.number_input,
                     "Color minimum",
                     value=None,
                     key=key_prefix + "_map_min",
                 )
                 vmax = _remembered_input(
-                    "linked_max",
                     st.number_input,
                     "Color maximum",
                     value=None,
@@ -376,9 +341,7 @@ def linked_map_ui(selected, state, key_prefix="xy"):
                 if (vmin is not None and vmax is not None and vmin >= vmax) or (
                     log_color and any(v is not None and v <= 0 for v in (vmin, vmax))
                 ):
-                    st.error(
-                        "Color bounds must increase and must be positive for log colors."
-                    )
+                    st.error("Color bounds must increase and must be positive for log colors.")
                     return
                 display = dict(colorscale=scale, log_color=log_color)
                 if vmin is not None:
@@ -404,23 +367,15 @@ def linked_map_ui(selected, state, key_prefix="xy"):
                 y=layer.frame[layer.y_column],
                 mode="markers",
                 name=layer.mineral_id,
-                marker=dict(
-                    size=3, color=mineral_palette(state).get(layer.mineral_id, "gray")
-                ),
+                marker=dict(size=3, color=mineral_palette(state).get(layer.mineral_id, "gray")),
             )
-        st.caption(
-            "No matching raster channel: displaying available mineral point locations."
-        )
+        st.caption("No matching raster channel: displaying available mineral point locations.")
     from .map_highlight import selected_pixel_trace
 
     for identity, g in spatial.groupby(IDS, dropna=False):
-        selected_pixel_trace(
-            figure, g, identity, state, style, highlight_color, highlight_opacity
-        )
+        selected_pixel_trace(figure, g, identity, state, style, highlight_color, highlight_opacity)
     if style == "Filled pixels" and not layers:
-        st.caption(
-            "Point-only data have no raster footprint; highlights use square markers."
-        )
+        st.caption("Point-only data have no raster footprint; highlights use square markers.")
     figure.update_yaxes(scaleanchor="x", scaleratio=1)
     figure.update_layout(xaxis_title="X (µm)", yaxis_title="Y (µm)")
     render_chart(figure, width="stretch", key=key_prefix + "_linked_map")
@@ -428,15 +383,12 @@ def linked_map_ui(selected, state, key_prefix="xy"):
         "Disconnected selected pixels remain disconnected. Overlay datasets only when their physical coordinates are registered."
     )
     domain_name = _remembered_input(
-        "xy_link:113:16",
         st.text_input,
         "Linked domain name",
         key_prefix.upper() + " selection",
         key=key_prefix + "_linked_domain_name",
     )
-    if st.button(
-        "Save selected map pixels as domain", key=key_prefix + "_save_linked_domain"
-    ):
+    if st.button("Save selected map pixels as domain", key=key_prefix + "_save_linked_domain"):
         if not domain_name.strip():
             st.error("Enter a domain name.")
             return
@@ -452,15 +404,12 @@ def linked_map_ui(selected, state, key_prefix="xy"):
         spatial.attrs["display_color"] = highlight_color
         state.selections[name] = spatial
         state.tables["Selection | " + name] = spatial
-        st.success(
-            f"Saved {name}. It is available in map selections and analysis data sources."
-        )
+        st.success(f"Saved {name}. It is available in map selections and analysis data sources.")
     if st.button("Prepare linked-pixel CSV", key=key_prefix + "_prepare_linked_csv"):
-        st.download_button(
+        download_table(
             "Download linked pixels",
-            spatial.to_csv(index=False),
+            spatial,
             "xy_linked_pixels.csv",
-            "text/csv",
             key=key_prefix + "_download_linked_pixels",
         )
 
