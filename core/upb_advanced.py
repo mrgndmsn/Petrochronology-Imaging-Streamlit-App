@@ -44,9 +44,7 @@ def york_fit(x, y, sx, sy, rho=None, max_iterations=100, tolerance=1e-12):
             break
         b = new_b
     else:
-        raise ValueError(
-            "York regression did not converge; inspect the data and uncertainties."
-        )
+        raise ValueError("York regression did not converge; inspect the data and uncertainties.")
     if not np.isfinite(b):
         raise ValueError("York regression has no finite slope for these data.")
     w = wx * wy / (wx + b * b * wy - 2 * b * rho * alpha)
@@ -62,9 +60,7 @@ def york_fit(x, y, sx, sy, rho=None, max_iterations=100, tolerance=1e-12):
     intercept_var = float(1 / np.sum(w) + adjusted_x_bar**2 * slope_var)
     covariance = float(-adjusted_x_bar * slope_var)
     residual = y - (intercept + b * x)
-    chi_square = float(
-        np.sum(residual**2 / (sy**2 + b * b * sx**2 - 2 * b * rho * sx * sy))
-    )
+    chi_square = float(np.sum(residual**2 / (sy**2 + b * b * sx**2 - 2 * b * rho * sx * sy)))
     dof = len(x) - 2
     mswd = chi_square / dof if dof > 0 else np.nan
     return {
@@ -108,9 +104,7 @@ def concordia_date(r68, r75, s68, s75, rho=0):
     if not np.isfinite(values).all() or s68 <= 0 or s75 <= 0:
         raise ValueError("Finite ratios and positive 1σ errors are required.")
     if abs(rho) >= 1:
-        raise ValueError(
-            "Correlation must be strictly between -1 and 1 for a concordia date."
-        )
+        raise ValueError("Correlation must be strictly between -1 and 1 for a concordia date.")
     covariance = np.array([[s68**2, rho * s68 * s75], [rho * s68 * s75, s75**2]])
     inverse = np.linalg.pinv(covariance)
 
@@ -136,11 +130,7 @@ def concordia_date(r68, r75, s68, s75, rho=0):
 
 
 def error_ellipse(x, y, sx, sy, rho=0, level=2, n=120):
-    if (
-        not np.isfinite([x, y, sx, sy, rho, level]).all()
-        or min(sx, sy, level) <= 0
-        or abs(rho) > 1
-    ):
+    if not np.isfinite([x, y, sx, sy, rho, level]).all() or min(sx, sy, level) <= 0 or abs(rho) > 1:
         raise ValueError(
             "Ellipse inputs require positive errors and scale, and correlation between -1 and 1."
         )
@@ -151,9 +141,7 @@ def error_ellipse(x, y, sx, sy, rho=0, level=2, n=120):
         np.sqrt(np.maximum(eigenvalues[order], 0)) * float(level)
     )
     theta = np.linspace(0, 2 * np.pi, n)
-    points = np.array([x, y])[:, None] + transform @ np.vstack(
-        (np.cos(theta), np.sin(theta))
-    )
+    points = np.array([x, y])[:, None] + transform @ np.vstack((np.cos(theta), np.sin(theta)))
     return points[0], points[1]
 
 
@@ -183,9 +171,7 @@ def line_concordia_intercepts(fit, plot_type="terra_wasserburg"):
                 ]
             )
             sigma = float(np.sqrt(max(gradient @ covariance @ gradient, 0)))
-            roots.append(
-                {"date_ma": root, "one_sigma_ma": sigma, "two_sigma_ma": 2 * sigma}
-            )
+            roots.append({"date_ma": root, "one_sigma_ma": sigma, "two_sigma_ma": 2 * sigma})
     return roots
 
 
@@ -195,16 +181,13 @@ def wetherill_to_tw(r68, r76, s68, s76, rho=0):
     y = r76
     sx = s68 / r68**2
     sy = s76
-    # x=1/r68 reverses the sign of correlation with r76.
+
     return x, y, sx, sy, -rho
 
 
 def rho_from_quotient(relative_u, relative_v, relative_quotient):
-    """Correlation of u and v where quotient=u/v."""
-    u, v, q = [
-        np.asarray(value, float)
-        for value in (relative_u, relative_v, relative_quotient)
-    ]
+
+    u, v, q = [np.asarray(value, float) for value in (relative_u, relative_v, relative_quotient)]
     denominator = 2 * u * v
     with np.errstate(divide="ignore", invalid="ignore"):
         rho = (u * u + v * v - q * q) / denominator
@@ -213,7 +196,7 @@ def rho_from_quotient(relative_u, relative_v, relative_quotient):
 
 
 def rho_product_factors(relative_product, relative_a, relative_b):
-    """Correlation of a and b where product=a*b."""
+
     product, a, b = [
         np.asarray(value, float) for value in (relative_product, relative_a, relative_b)
     ]
