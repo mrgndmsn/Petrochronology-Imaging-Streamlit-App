@@ -25,8 +25,7 @@ def save_project(
     tab_settings=None,
     progress=None,
 ):
-    # Snapshot to private temporary files before serialization. Avoid duplicating
-    # all arrays/dataframes in RAM while retaining isolation from later mutations.
+
     import tempfile
     import pickle
     from pathlib import Path
@@ -71,11 +70,10 @@ def save_project(
 
 
 def _write_table(archive, path, frame):
-    # Preserve pandas table schema, but encode bounded row batches instead of
-    # building one huge JSON string and then another UTF-8 byte copy.
-    schema = json.loads(
-        frame.iloc[:0].to_json(orient="table", index=False, double_precision=15)
-    )["schema"]
+
+    schema = json.loads(frame.iloc[:0].to_json(orient="table", index=False, double_precision=15))[
+        "schema"
+    ]
     with archive.open(path, "w", force_zip64=True) as handle:
         handle.write(('{"schema":' + json.dumps(schema) + ',"data":[').encode())
         first = True
@@ -120,9 +118,7 @@ def _save_project(
         "point_layers": [],
         "calculation_definitions": _json_safe(definitions or []),
     }
-    with zipfile.ZipFile(
-        output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1
-    ) as archive:
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
         for index, (key, layer) in enumerate(layers.items()):
             path = f"layers/layer_{index}.npz"
             if progress:
@@ -132,7 +128,7 @@ def _save_project(
                 for k in ("x_grid", "y_grid")
                 if k in layer.metadata
             }
-            # Compress once in the outer archive, without a second in-memory copy.
+
             with tempfile.TemporaryFile() as arrays:
                 np.savez(arrays, values=layer.values, x=layer.x, y=layer.y, **extra)
                 arrays.seek(0)
@@ -149,11 +145,7 @@ def _save_project(
                     "run_id": layer.run_id,
                     "channel": layer.channel,
                     "metadata": _json_safe(
-                        {
-                            k: v
-                            for k, v in layer.metadata.items()
-                            if k not in ("x_grid", "y_grid")
-                        }
+                        {k: v for k, v in layer.metadata.items() if k not in ("x_grid", "y_grid")}
                     ),
                 }
             )
@@ -227,15 +219,14 @@ def load_project(data):
         if "manifest.json" not in names:
             raise ValueError("This is not a geochemical map project.")
         manifest = json.loads(archive.read("manifest.json"))
-        if manifest.get("format") != "geochemical-map-streamlit" or manifest.get(
-            "version"
-        ) not in (1, FORMAT_VERSION):
+        if manifest.get("format") != "geochemical-map-streamlit" or manifest.get("version") not in (
+            1,
+            FORMAT_VERSION,
+        ):
             raise ValueError("Unsupported project format or version.")
         layers = {}
         for item in manifest["layers"]:
-            with np.load(
-                BytesIO(archive.read(item["path"])), allow_pickle=False
-            ) as arrays:
+            with np.load(BytesIO(archive.read(item["path"])), allow_pickle=False) as arrays:
                 layer = MapLayer(
                     item["sample_id"],
                     item["mineral_id"],
@@ -250,10 +241,7 @@ def load_project(data):
                     },
                 )
             layers[item["key"]] = layer
-        tables = {
-            item["name"]: _read_frame(archive, item["path"])
-            for item in manifest["tables"]
-        }
+        tables = {item["name"]: _read_frame(archive, item["path"]) for item in manifest["tables"]}
         for item in manifest["tables"]:
             tables[item["name"]].attrs.update(item.get("attrs", {}))
         grains = {}
