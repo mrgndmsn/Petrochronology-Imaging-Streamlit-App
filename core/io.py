@@ -24,10 +24,7 @@ def unique_columns(columns) -> list[str]:
 
 
 def read_table(data: bytes, filename: str, nrows: int | None = None) -> pd.DataFrame:
-    """Read tabular data without expanding CSV text into Python row objects.
 
-    nrows is used for configuration previews; the complete file is read on import.
-    """
     suffix = Path(filename).suffix.lower()
     if suffix in {".xlsx", ".xls"}:
         frame = pd.read_excel(BytesIO(data), nrows=nrows)
@@ -35,7 +32,7 @@ def read_table(data: bytes, filename: str, nrows: int | None = None) -> pd.DataF
         import csv
 
         sample = data[:65536].decode("utf-8-sig", errors="replace")
-        # Sniff only complete lines from the small prefix, never the whole file.
+
         sample = sample.rsplit("\n", 1)[0] if "\n" in sample else sample
         try:
             delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
@@ -69,15 +66,11 @@ def suggested_column(columns, *needles):
     normalized = lambda value: re.sub(r"[^a-z0-9]", "", str(value).lower())
     wanted = [normalized(item) for item in needles]
     for needle in wanted:
-        exact = next(
-            (column for column in columns if normalized(column) == needle), None
-        )
+        exact = next((column for column in columns if normalized(column) == needle), None)
         if exact is not None:
             return exact
     for needle in wanted:
-        partial = next(
-            (column for column in columns if needle in normalized(column)), None
-        )
+        partial = next((column for column in columns if needle in normalized(column)), None)
         if partial is not None:
             return partial
     return None
@@ -95,10 +88,8 @@ def table_to_layer(
     pixel_size_y_um: float | None = None,
     rasterize_coordinates: bool = False,
 ) -> MapLayer:
-    sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um = (
-        validate_assignment(
-            sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
-        )
+    sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um = validate_assignment(
+        sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
     )
     if bool(x_column) != bool(y_column):
         raise ValueError("Select both X and Y coordinate columns, or neither.")
@@ -117,8 +108,7 @@ def table_to_layer(
         work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=["x", "y"])
         if work.empty:
             raise ValueError("No finite X/Y coordinates were found.")
-        # Explicit calibration defines a regular raster; omitted cells remain NaN.
-        # Do not compress gaps in sparse coordinate tables into adjacent pixels.
+
         x0, y0 = float(work.x.min()), float(work.y.min())
         cf = (work.x.to_numpy(float) - x0) / pixel_size_x_um
         rf = (work.y.to_numpy(float) - y0) / pixel_size_y_um
@@ -141,20 +131,13 @@ def table_to_layer(
         pivot = work.pivot_table(
             index="row_index", columns="column_index", values="value", aggfunc="mean"
         )
-        values = pivot.reindex(index=np.arange(nr), columns=np.arange(nc)).to_numpy(
-            float
-        )
+        values = pivot.reindex(index=np.arange(nr), columns=np.arange(nc)).to_numpy(float)
         x = x0 + np.arange(nc) * pixel_size_x_um
         y = y0 + np.arange(nr) * pixel_size_y_um
         coordinates_are_um = True
     else:
-        # A header-bearing table is a column of observations, never an inferred matrix.
-        # Headerless matrices have a separate explicit importer.
-        values = (
-            pd.to_numeric(frame[channel], errors="coerce")
-            .to_numpy(float)
-            .reshape(-1, 1)
-        )
+
+        values = pd.to_numeric(frame[channel], errors="coerce").to_numpy(float).reshape(-1, 1)
         x = np.arange(values.shape[1], dtype=float) * pixel_size_x_um
         y = np.arange(values.shape[0], dtype=float) * pixel_size_y_um
         coordinates_are_um = True
@@ -192,9 +175,9 @@ def read_sparse_matrix(data: bytes) -> np.ndarray:
 
 def read_numeric_matrix(data: bytes) -> np.ndarray:
     try:
-        return pd.read_csv(
-            BytesIO(data), header=None, dtype=float, encoding="utf-8-sig"
-        ).to_numpy(dtype=float)
+        return pd.read_csv(BytesIO(data), header=None, dtype=float, encoding="utf-8-sig").to_numpy(
+            dtype=float
+        )
     except (ValueError, TypeError):
         frame = pd.read_csv(
             BytesIO(data), header=None, encoding="utf-8-sig", encoding_errors="replace"
@@ -203,7 +186,7 @@ def read_numeric_matrix(data: bytes) -> np.ndarray:
 
 
 def crop_aligned_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
-    """Crop a same-shaped channel stack to its union footprint, preserving alignment."""
+
     if not matrices:
         return []
     shape = matrices[0].shape
@@ -223,9 +206,7 @@ def crop_aligned_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
     return [np.asarray(matrix, dtype=float)[bounds] for matrix in matrices]
 
 
-def validate_assignment(
-    sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
-):
+def validate_assignment(sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um):
     identities = (sample_id, mineral_id, run_id)
     if any(not isinstance(v, str) or not v.strip() for v in identities):
         raise ValueError("Explicit sample, mineral, and run IDs are required.")
@@ -241,7 +222,7 @@ def validate_assignment(
 
 
 def matrix_channel_name(filename: str):
-    # Only a display suggestion; identity is never inferred from filenames.
+
     return Path(filename).stem.strip() or "Value"
 
 
@@ -259,12 +240,8 @@ def table_to_point_layer(
     sample_id, mineral_id, run_id, dx, dy = validate_assignment(
         sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
     )
-    x_column = x_column or next(
-        (c for c in ("X", "X (µm)", "x", "x [um]") if c in frame), None
-    )
-    y_column = y_column or next(
-        (c for c in ("Y", "Y (µm)", "y", "y [um]") if c in frame), None
-    )
+    x_column = x_column or next((c for c in ("X", "X (µm)", "x", "x [um]") if c in frame), None)
+    y_column = y_column or next((c for c in ("Y", "Y (µm)", "y", "y [um]") if c in frame), None)
     if x_column not in frame or y_column not in frame or x_column == y_column:
         raise ValueError("No recognized X/Y coordinate columns were found.")
     work = frame.copy()
@@ -307,7 +284,7 @@ def matrix_layers(
     y_coordinates=None,
     collapse_duplicates=False,
 ):
-    """One explicitly assigned aligned channel stack. Records: (channel, filename, array)."""
+
     sample_id, mineral_id, run_id, dx, dy = validate_assignment(
         sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um
     )
@@ -339,22 +316,16 @@ def matrix_layers(
                 "Some finite channel values have no coordinate pair; supply their coordinates before collapsing."
             )
         points = np.column_stack((xg[valid], yg[valid]))
-        unique, inverse, counts = np.unique(
-            points, axis=0, return_inverse=True, return_counts=True
-        )
+        unique, inverse, counts = np.unique(points, axis=0, return_inverse=True, return_counts=True)
         layers = {}
         for (channel, filename, _), a in zip(records, arrays):
             v = a[valid]
             finite = np.isfinite(v)
-            totals = np.bincount(
-                inverse[finite], weights=v[finite], minlength=len(unique)
-            )
+            totals = np.bincount(inverse[finite], weights=v[finite], minlength=len(unique))
             n = np.bincount(inverse[finite], minlength=len(unique))
             mean = np.divide(totals, n, out=np.full(len(unique), np.nan), where=n > 0)
             frame = pd.DataFrame({"x": unique[:, 0], "y": unique[:, 1], "value": mean})
-            layer = table_to_layer(
-                frame, sample_id, mineral_id, run_id, "value", "x", "y", dx, dy
-            )
+            layer = table_to_layer(frame, sample_id, mineral_id, run_id, "value", "x", "y", dx, dy)
             layer.channel = str(channel).strip()
             layer.metadata.update(
                 source_file=filename,
@@ -412,7 +383,7 @@ def matrix_layers(
 
 
 def complete_coordinate_grid(values, shape):
-    """Preserve explicit complete grids; fill sparse affine references only when determined."""
+
     values = np.asarray(values, float)
     if values.shape != shape:
         raise ValueError("Coordinate reference must match the raw matrix shape.")
@@ -420,17 +391,11 @@ def complete_coordinate_grid(values, shape):
     if finite.all():
         return values.copy()
     rr, cc = np.indices(shape)
-    # Singleton dimensions do not need an independent slope.
-    columns = (
-        [np.ones(shape)]
-        + ([cc] if shape[1] > 1 else [])
-        + ([rr] if shape[0] > 1 else [])
-    )
+
+    columns = [np.ones(shape)] + ([cc] if shape[1] > 1 else []) + ([rr] if shape[0] > 1 else [])
     design = np.column_stack([c[finite] for c in columns])
     if finite.sum() < len(columns) or np.linalg.matrix_rank(design) < len(columns):
-        raise ValueError(
-            "Sparse coordinate reference does not determine its affine grid."
-        )
+        raise ValueError("Sparse coordinate reference does not determine its affine grid.")
     fit = np.linalg.lstsq(design, values[finite], rcond=None)[0]
     if not np.allclose(design @ fit, values[finite], atol=1e-5, rtol=0):
         raise ValueError(
