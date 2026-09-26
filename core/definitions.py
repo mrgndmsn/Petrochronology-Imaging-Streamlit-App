@@ -1,5 +1,3 @@
-"""Saved calculation/alias rules replayed into eligible existing and newly imported data."""
-
 import hashlib
 import json
 import numpy as np
@@ -11,30 +9,24 @@ from .analysis import evaluate_equation
 def make_definition(kind, target, scope, expression=None, sources=None, rule=None):
     if kind not in ("formula", "alias"):
         raise ValueError("Unknown definition kind.")
-    record = dict(
-        kind=kind, target=target.strip(), scope=list(scope) if scope != "*" else "*"
-    )
+    record = dict(kind=kind, target=target.strip(), scope=list(scope) if scope != "*" else "*")
     if not record["target"]:
         raise ValueError("A target channel is required.")
     if kind == "formula":
         record["expression"] = str(expression)
     else:
         record.update(sources=list(sources or []), rule=rule or "Target then source")
-    identity = json.dumps(
-        [record["kind"], record["target"], record["scope"]], sort_keys=True
-    )
+    identity = json.dumps([record["kind"], record["target"], record["scope"]], sort_keys=True)
     record["id"] = hashlib.sha256(identity.encode()).hexdigest()[:20]
     return record
 
 
 def register_definition(definitions, definition):
-    # A target has one rule in a given scope. Updates are explicit and deterministic.
+
     definitions[:] = [
         d
         for d in definitions
-        if not (
-            d["scope"] == definition["scope"] and d["target"] == definition["target"]
-        )
+        if not (d["scope"] == definition["scope"] and d["target"] == definition["target"])
     ]
     definitions.append(definition)
 
@@ -48,7 +40,7 @@ def replay_definitions(layers, tables, definitions):
     groups = {}
     for layer in list(layers.values()):
         groups.setdefault((layer.sample_id, layer.mineral_id, layer.run_id), layer)
-    # Multiple passes resolve dependencies without requiring registration order.
+
     for identity, reference in groups.items():
         pending = [d for d in definitions if _eligible(d, identity)]
         for _ in range(len(pending) + 1):
@@ -72,7 +64,7 @@ def replay_definitions(layers, tables, definitions):
                     continue
                 try:
                     if definition["kind"] == "formula":
-                        # Exclude the prior generated result to prevent self-reference.
+
                         context = {k: v for k, v in layers.items() if k != key}
                         out = calculated_layers(
                             context,
@@ -129,10 +121,7 @@ def replay_definitions(layers, tables, definitions):
                         pending.remove(definition)
                         continue
                     mask = np.logical_and.reduce(
-                        [
-                            work[c].astype(str).eq(v).to_numpy()
-                            for c, v in zip(ids, scope)
-                        ]
+                        [work[c].astype(str).eq(v).to_numpy() for c, v in zip(ids, scope)]
                     )
                 if not mask.any():
                     pending.remove(definition)
@@ -156,15 +145,11 @@ def replay_definitions(layers, tables, definitions):
                         if not sources or any(c not in subset for c in sources):
                             continue
                         columns = list(
-                            dict.fromkeys(
-                                ([target] if target in subset else []) + sources
-                            )
+                            dict.fromkeys(([target] if target in subset else []) + sources)
                         )
                         if definition["rule"] == "Source then target":
                             columns = list(
-                                dict.fromkeys(
-                                    sources + ([target] if target in subset else [])
-                                )
+                                dict.fromkeys(sources + ([target] if target in subset else []))
                             )
                         values = (
                             subset[columns]
