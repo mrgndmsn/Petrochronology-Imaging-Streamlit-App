@@ -1,5 +1,4 @@
-"""Disjoint domain membership fractions of filtered, measured observations."""
-
+from core.exports import download_table
 import numpy as np
 import pandas as pd
 
@@ -34,9 +33,7 @@ def domain_fraction_table(points, selections, names, channel=None):
     if not parts:
         return pd.DataFrame()
     whole = (
-        pd.concat(parts, ignore_index=True)
-        .groupby(IDS + ["x", "y"], as_index=False)
-        .value.mean()
+        pd.concat(parts, ignore_index=True).groupby(IDS + ["x", "y"], as_index=False).value.mean()
     )
     keys = pd.MultiIndex.from_frame(whole[IDS + ["x", "y"]])
     membership = [[] for _ in range(len(whole))]
@@ -50,7 +47,7 @@ def domain_fraction_table(points, selections, names, channel=None):
         matched = keys.isin(pd.MultiIndex.from_frame(t))
         for i in np.flatnonzero(matched):
             membership[i].append(name)
-    # JSON membership is unambiguous even if a domain name contains a separator.
+
     import json
 
     whole["membership"] = [json.dumps(m) for m in membership]
@@ -77,7 +74,6 @@ def domain_fraction_ui(points, state):
         st.info("Save pixel selections or drawn domains first.")
         return
     chosen = remembered_input(
-        "fraction_domains",
         st.multiselect,
         "Domains for fractions",
         names,
@@ -85,7 +81,6 @@ def domain_fraction_ui(points, state):
         key="fraction_domains",
     )
     basis = remembered_input(
-        "domain_basis",
         st.selectbox,
         "Domain fraction basis",
         ["Pixel count", "Sum of channel values"],
@@ -94,7 +89,6 @@ def domain_fraction_ui(points, state):
     channels = sorted({c for l in points.values() for c in l.channels})
     selected = (
         remembered_input(
-            "domain_fraction_channels",
             st.multiselect,
             "Domain fraction channels",
             channels,
@@ -145,10 +139,9 @@ def domain_fraction_ui(points, state):
             width="stretch",
         )
         st.dataframe(table, width="stretch", hide_index=True)
-        st.download_button(
+        download_table(
             "Download domain fractions — " + label,
-            table.to_csv(index=False),
+            table,
             "domain_fractions.csv",
-            "text/csv",
             key="domain_fraction_download::" + label,
         )
