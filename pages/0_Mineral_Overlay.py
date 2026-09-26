@@ -23,9 +23,7 @@ from core.mineral_colors import mineral_palette
 palette = mineral_palette(st.session_state)
 with st.container():
     st.subheader("Mineral colors — shared across plots")
-    st.caption(
-        "Choose each mineral color here; other plots use it when grouped by mineral ID."
-    )
+    st.caption("Choose each mineral color here; other plots use it when grouped by mineral ID.")
     for mineral in sorted(palette):
         palette[mineral] = st.color_picker(
             mineral, palette[mineral], key=f"mineral_color::{mineral}"
@@ -42,22 +40,20 @@ for index, layer in enumerate(layers):
         continue
     frame = layer.frame
     value_columns = layer.channels
-    # A row represents the mineral where at least one chemical channel is finite.
+
     present = np.zeros(len(frame), bool)
     for column in value_columns:
         present |= np.isfinite(pd.to_numeric(frame[column], errors="coerce").to_numpy())
-    present &= np.isfinite(
-        pd.to_numeric(frame[layer.x_column], errors="coerce")
-    ) & np.isfinite(pd.to_numeric(frame[layer.y_column], errors="coerce"))
+    present &= np.isfinite(pd.to_numeric(frame[layer.x_column], errors="coerce")) & np.isfinite(
+        pd.to_numeric(frame[layer.y_column], errors="coerce")
+    )
     shown = frame.loc[present]
     from core.map_highlight import _raster_highlight
 
     raster = False
     source = st.session_state.layers.get(layer.metadata.get("source_map"))
     if source is not None and len(shown):
-        coordinates = pd.DataFrame(
-            {"x": shown[layer.x_column], "y": shown[layer.y_column]}
-        )
+        coordinates = pd.DataFrame({"x": shown[layer.x_column], "y": shown[layer.y_column]})
         raster = _raster_highlight(
             figure,
             coordinates,
@@ -67,9 +63,7 @@ for index, layer in enumerate(layers):
             opacity,
         )
     if raster:
-        figure.data[-1].update(
-            legendgroup=layer.mineral_id, meta={"color_by": "mineral_id"}
-        )
+        figure.data[-1].update(legendgroup=layer.mineral_id, meta={"color_by": "mineral_id"})
     else:
         figure.add_trace(
             go.Scattergl(
@@ -119,15 +113,9 @@ figure.update_layout(
 figure.update_yaxes(scaleanchor="x")
 from core.domain_maps import domain_controls, draw_domains
 
-show_domains = st.checkbox(
-    "Show saved domain overlays", value=False, key="mineral_show_domains"
-)
-saved_domains = (
-    domain_controls(st.session_state, layers, "mineral_saved") if show_domains else {}
-)
-show_domain_labels = st.checkbox(
-    "Show domain labels", value=False, key="mineral_domain_labels"
-)
+show_domains = st.checkbox("Show saved domain overlays", value=False, key="mineral_show_domains")
+saved_domains = domain_controls(st.session_state, layers, "mineral_saved") if show_domains else {}
+show_domain_labels = st.checkbox("Show domain labels", value=False, key="mineral_domain_labels")
 if saved_domains:
     domain_style = st.selectbox("Domain display style", ["Filled pixels", "Circles"])
     domain_opacity = st.slider("Domain opacity", 0.1, 1.0, 0.8)
