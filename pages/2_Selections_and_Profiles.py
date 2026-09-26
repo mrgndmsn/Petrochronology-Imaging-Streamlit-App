@@ -1,13 +1,12 @@
 from __future__ import annotations
 from core.exports import download_table
-import copy
 import re
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from core.exports import render_chart
-from core.selections import selection_summary
+from core.selections import selection_summary, remember_selection_change, undo_selection_change
 from core.state import initialize_state
 
 st.set_page_config(page_title="Selections and profiles", page_icon="✏️", layout="wide")
@@ -385,13 +384,6 @@ if created and created[1].empty:
     )
     created = None
 if created:
-    st.session_state.selection_history.append(
-        (
-            copy.deepcopy(st.session_state.selections),
-            copy.deepcopy(st.session_state.tables),
-            st.session_state.active_table_name,
-        )
-    )
     original_name, frame_to_save = created
     unique_name = original_name
     suffix = 2
@@ -407,8 +399,9 @@ if created:
     created[1]["selection_id"] = created[0]
     created[1].attrs["display_color"] = new_color
     key = f"{context_key}::{created[0]}"
-    st.session_state.selections[key] = created[1]
     table_name = f"Selection | {created[0]} | {context_key}"
+    remember_selection_change(st.session_state, key, [table_name])
+    st.session_state.selections[key] = created[1]
     st.session_state.tables[table_name] = created[1]
     st.session_state.active_table_name = table_name
     if draw_mode == "Lasso vertices":
@@ -422,13 +415,9 @@ if created:
 if "last_saved_selection_name" in st.session_state:
     st.success("Last saved selection: " + st.session_state.last_saved_selection_name)
 matching = filtered_saved_selections(st.session_state.selections, visible_layers)
+st.caption("Undo keeps the last 20 selection changes for this session.")
 if st.button("Undo last selection change", disabled=not st.session_state.selection_history):
-    previous = st.session_state.selection_history.pop()
-    (
-        st.session_state.selections,
-        st.session_state.tables,
-        st.session_state.active_table_name,
-    ) = previous
+    undo_selection_change(st.session_state)
     st.rerun()
 if matching:
     chosen = st.selectbox("Saved selection", matching, format_func=lambda key: key.split("::")[-1])
@@ -456,17 +445,11 @@ if matching:
                     "That selection name already exists for the visible maps; choose another name."
                 )
             else:
-                st.session_state.selection_history.append(
-                    (
-                        copy.deepcopy(st.session_state.selections),
-                        copy.deepcopy(st.session_state.tables),
-                        st.session_state.active_table_name,
-                    )
-                )
                 subset = table.copy()
                 subset["selection_id"] = copy_name
-                st.session_state.selections[copy_key] = subset
                 table_name = f"Selection | {copy_name} | {context_key}"
+                remember_selection_change(st.session_state, copy_key, [table_name])
+                st.session_state.selections[copy_key] = subset
                 st.session_state.tables[table_name] = subset
                 st.session_state.active_table_name = table_name
                 st.success(f"Saved {len(subset)} filtered pixels as {copy_name}.")
@@ -520,12 +503,6 @@ if matching:
     a, b = st.columns(2)
     download_table("Download selection", table, "selection.csv", container=a)
     if b.button("Delete selection"):
-        st.session_state.selection_history.append(
-            (
-                copy.deepcopy(st.session_state.selections),
-                copy.deepcopy(st.session_state.tables),
-                st.session_state.active_table_name,
-            )
-        )
+        remember_selection_change(st.session_state, chosen)
         del st.session_state.selections[chosen]
         st.rerun()
