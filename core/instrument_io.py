@@ -1,5 +1,3 @@
-"""Probe DAT and Surfer 7 readers."""
-
 from io import StringIO
 import struct
 import numpy as np
@@ -51,7 +49,7 @@ def read_probe_dat_bytes(data):
 def read_surfer7_bytes(blob):
     if blob[:4] != b"DSRB":
         raise ValueError("Only Surfer 7 binary DSRB grids are supported.")
-    # Walk length-delimited sections instead of searching arbitrary data bytes for tags.
+
     position = 4
     grid = data = None
     while position + 4 <= len(blob):
@@ -77,9 +75,7 @@ def read_surfer7_bytes(blob):
     nr, nc = struct.unpack_from("<II", grid)
     x0, y0, dx, dy, zmin, zmax, rotation, blank = struct.unpack_from("<8d", grid, 8)
     if rotation != 0:
-        raise ValueError(
-            "Rotated Surfer grids require coordinate reprojection before import."
-        )
+        raise ValueError("Rotated Surfer grids require coordinate reprojection before import.")
     if min(nr, nc) <= 0 or nr * nc > 25_000_000 or len(data) != nr * nc * 8:
         raise ValueError("Surfer dimensions do not match DATA size.")
     z = np.frombuffer(data, dtype="<f8").reshape(nr, nc).copy()
