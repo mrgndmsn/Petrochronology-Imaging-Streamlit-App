@@ -1,5 +1,3 @@
-"""Session-wide mineral palette shared by categorical charts."""
-
 DEFAULT_COLORS = [
     "#e41a1c",
     "#377eb8",
@@ -23,9 +21,7 @@ def mineral_palette(state):
     )
     for frame in state.get("tables", {}).values():
         if "mineral_id" in frame:
-            names = sorted(
-                set(names) | set(frame.mineral_id.dropna().astype(str).unique())
-            )
+            names = sorted(set(names) | set(frame.mineral_id.dropna().astype(str).unique()))
     for name in names:
         if name not in palette:
             palette[name] = DEFAULT_COLORS[len(palette) % len(DEFAULT_COLORS)]
