@@ -1,15 +1,10 @@
-"""Category controls below charts; mineral and selection palettes remain authoritative."""
-
 from core.page_memory import remembered_input as _remembered_input
 import hashlib
 from .selection_style import domain_palette, COLORS
 
 
 def category_entries(figure, state):
-    if (
-        isinstance(figure.layout.meta, dict)
-        and figure.layout.meta.get("palette_owner") == "ree"
-    ):
+    if isinstance(figure.layout.meta, dict) and figure.layout.meta.get("palette_owner") == "ree":
         return [], "REE colors follow the group-color and palette controls above."
     group = (figure.layout.legend.title.text or "").split(", ")[0]
     domains = domain_palette(state)
@@ -51,8 +46,7 @@ def category_entries(figure, state):
         e
         for e in entries
         if not (
-            group in ("selection_id", "profile_id", "Selection")
-            and e[2].split(", ")[0] in domains
+            group in ("selection_id", "profile_id", "Selection") and e[2].split(", ")[0] in domains
         )
     ]
     return editable, (
@@ -110,19 +104,11 @@ def controls(figure, state, prefix, prepared):
                     if isinstance(original, str) and original.startswith("#")
                     else COLORS[i % len(COLORS)]
                 )
-            widget_key = (
-                prefix + "_category_" + hashlib.sha256(key.encode()).hexdigest()[:12]
-            )
+            widget_key = prefix + "_category_" + hashlib.sha256(key.encode()).hexdigest()[:12]
             if state.get(widget_key) != current:
                 state[widget_key] = current
 
             def commit(category_key=key, control_key=widget_key):
                 registry[category_key] = state[control_key]
 
-            _remembered_input(
-                "chart_colors:66:18",
-                st.color_picker,
-                name,
-                key=widget_key,
-                on_change=commit,
-            )
+            _remembered_input(st.color_picker, name, key=widget_key, on_change=commit)
