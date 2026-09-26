@@ -6,9 +6,7 @@ LAMBDA_235 = 9.8485e-10
 U238_U235 = 137.818
 
 
-def ratio76_from_age(
-    age_ma, lambda238=LAMBDA_238, lambda235=LAMBDA_235, u238_u235=U238_U235
-):
+def ratio76_from_age(age_ma, lambda238=LAMBDA_238, lambda235=LAMBDA_235, u238_u235=U238_U235):
     age = np.asarray(age_ma, dtype=float)
     years = age * 1e6
     with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
@@ -18,14 +16,10 @@ def ratio76_from_age(
 
 
 def ratio75_from_76_68(ratio76, ratio68, u238_u235=U238_U235):
-    return (
-        np.asarray(ratio76, dtype=float) * np.asarray(ratio68, dtype=float) * u238_u235
-    )
+    return np.asarray(ratio76, dtype=float) * np.asarray(ratio68, dtype=float) * u238_u235
 
 
-def age_from_ratio(
-    ratio, system, lambda238=LAMBDA_238, lambda235=LAMBDA_235, u238_u235=U238_U235
-):
+def age_from_ratio(ratio, system, lambda238=LAMBDA_238, lambda235=LAMBDA_235, u238_u235=U238_U235):
     ratio = np.asarray(ratio, dtype=float)
     if system == "68":
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -50,9 +44,7 @@ def age_uncertainty(
     lambda235=LAMBDA_235,
     u238_u235=U238_U235,
 ):
-    ratio, sigma = np.broadcast_arrays(
-        np.asarray(ratio, float), np.asarray(sigma_ratio, float)
-    )
+    ratio, sigma = np.broadcast_arrays(np.asarray(ratio, float), np.asarray(sigma_ratio, float))
     age = age_from_ratio(ratio, system, lambda238, lambda235, u238_u235)
     valid = np.isfinite(age) & np.isfinite(sigma) & (sigma >= 0)
     if system in ("68", "75"):
@@ -85,9 +77,7 @@ def weighted_mean(ages, sigma_1s, expand_for_overdispersion=False):
     mean = float(np.sum(weights * ages) / np.sum(weights))
     sigma_mean = float(np.sqrt(1 / np.sum(weights)))
     mswd = (
-        float(np.sum(weights * (ages - mean) ** 2) / (len(ages) - 1))
-        if len(ages) > 1
-        else np.nan
+        float(np.sum(weights * (ages - mean) ** 2) / (len(ages) - 1)) if len(ages) > 1 else np.nan
     )
     if expand_for_overdispersion and np.isfinite(mswd) and mswd > 1:
         sigma_mean *= np.sqrt(mswd)
