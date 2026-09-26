@@ -1,5 +1,3 @@
-"""Selection labels, stable colors, and physical profile-buffer previews."""
-
 import numpy as np
 
 COLORS = [
@@ -58,13 +56,12 @@ def domain_palette(state):
 
 
 def domain_color_picker(state, name, label, key):
-    """Commit color edits before rendering; refresh stale controls on other pages."""
+
     import streamlit as st
     from .page_memory import remembered_input
 
     current = selection_color(state["selections"][name])
-    # The saved domain is authoritative. The callback commits user changes before
-    # this code runs, so a stale picker cannot overwrite a newer color.
+
     if state.get(key) != current:
         state[key] = current
 
@@ -82,4 +79,4 @@ def domain_color_picker(state, name, label, key):
                 ):
                     table.attrs["display_color"] = color
 
-    return remembered_input(key, st.color_picker, label, key=key, on_change=commit)
+    return remembered_input(st.color_picker, label, key=key, on_change=commit)
