@@ -1,5 +1,3 @@
-"""Saved spatial domains as categorical maps or overlays."""
-
 from .map_highlight import selected_pixel_trace, IDS
 from .selection_style import selection_color
 from .page_memory import remembered_input
@@ -24,7 +22,6 @@ def domain_controls(state, layers, key):
         return {}
     with st.expander("Saved domain overlays", expanded=True):
         chosen = remembered_input(
-            key + "_domains",
             st.multiselect,
             "Domains to display",
             list(candidates),
@@ -38,16 +35,12 @@ def domain_controls(state, layers, key):
             widget_key = key + "_color_" + name
             from .selection_style import domain_color_picker
 
-            color = domain_color_picker(
-                state, name, "Domain color: " + name, widget_key
-            )
+            color = domain_color_picker(state, name, "Domain color: " + name, widget_key)
             candidates[name].attrs["display_color"] = color
     return {name: candidates[name] for name in chosen}
 
 
-def draw_domains(
-    figure, domains, state, style="Filled pixels", opacity=0.8, show_labels=False
-):
+def draw_domains(figure, domains, state, style="Filled pixels", opacity=0.8, show_labels=False):
     for name, table in domains.items():
         color = selection_color(table)
         label = str(table.selection_id.iloc[0]) if "selection_id" in table else name
