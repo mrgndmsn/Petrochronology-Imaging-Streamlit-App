@@ -1,5 +1,3 @@
-"""Keep input widget values through navigation, without retaining button presses."""
-
 import ast
 from functools import lru_cache
 from pathlib import Path
@@ -24,24 +22,21 @@ INPUTS = {
 
 
 def portable_widget_key(key):
-    """Keep implicit control identities independent of install path and line edits."""
+
     import re
 
-    return re.sub(
-        r"^input::.*?((?:core|pages)/[^:]+\.py):\d+:\d+::", r"input::\1::", key
-    )
+    return re.sub(r"^input::.*?((?:core|pages)/[^:]+\.py):\d+:\d+::", r"input::\1::", key)
 
 
 def preserve_widget_state():
-    # Reassigning a keyed widget value detaches it from Streamlit's cleanup for
-    # this run. Do this before rendering any widgets, including navigation.
+
     for key in st.session_state.get("_remembered_widget_keys", []):
         if key in st.session_state:
             st.session_state[key] = st.session_state[key]
 
 
 def alphabetical_data_options(options, state):
-    """Sort column choices without changing modes or selected element order."""
+
     columns = set()
     for layer in state.get("layers", {}).values():
         columns.add(str(layer.channel))
@@ -53,14 +48,14 @@ def alphabetical_data_options(options, state):
             columns.update(map(str, frame.columns))
     values = [value for value in options if value is not None and value != "None"]
     if values and all(isinstance(value, str) and value in columns for value in values):
-        return [
-            value for value in options if value is None or value == "None"
-        ] + sorted(values, key=lambda value: (value.casefold(), value))
+        return [value for value in options if value is None or value == "None"] + sorted(
+            values, key=lambda value: (value.casefold(), value)
+        )
     return options
 
 
-def remembered_input(identity, method, *args, **kwargs):
-    key = kwargs.setdefault("key", "input::" + identity)
+def remembered_input(method, *args, key, **kwargs):
+    kwargs["key"] = key
     registry = st.session_state.setdefault("_remembered_widget_keys", [])
     if key not in registry:
         registry.append(key)
@@ -134,8 +129,7 @@ def run_page(path):
     calls = {}
 
     def page_input(identity, method, *args, **kwargs):
-        # A comprehension can create several controls at the same source line.
-        # Include the displayed label and occurrence, not only its line number.
+
         if "key" not in kwargs:
             label = str(kwargs.get("label", args[0] if args else ""))
             relative = "/".join(Path(path).parts[-2:])
@@ -143,7 +137,8 @@ def run_page(path):
             count = calls.get(base, 0)
             calls[base] = count + 1
             identity = base + "::" + str(count)
-        return remembered_input(identity, method, *args, **kwargs)
+        kwargs.setdefault("key", "input::" + identity)
+        return remembered_input(method, *args, **kwargs)
 
     exec(
         compiled_page(path, Path(path).stat().st_mtime_ns),
