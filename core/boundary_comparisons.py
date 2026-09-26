@@ -1,5 +1,4 @@
-"""Directional mineral-contact chemistry and geometric grain rim/core summaries."""
-
+from core.exports import download_table
 from core.page_memory import remembered_input as _remembered_input
 import numpy as np
 import pandas as pd
@@ -16,14 +15,8 @@ def zone_summary(pixels):
     differences = []
     for identity, g in summary.groupby(keys, dropna=False):
         indexed = g.set_index("zone")
-        near = (
-            indexed.loc["Near boundary", "mean"]
-            if "Near boundary" in indexed.index
-            else np.nan
-        )
-        interior = (
-            indexed.loc["Interior", "mean"] if "Interior" in indexed.index else np.nan
-        )
+        near = indexed.loc["Near boundary", "mean"] if "Near boundary" in indexed.index else np.nan
+        interior = indexed.loc["Interior", "mean"] if "Interior" in indexed.index else np.nan
         ratio = near / interior if np.isfinite(interior) and interior != 0 else np.nan
         differences.append(
             dict(
@@ -63,9 +56,7 @@ def mineral_pair_comparison(points, minerals, channels, width):
                 (layer.sample_id, layer.run_id, layer.mineral_id, channel), []
             ).append(data)
     groups = {
-        k: pd.concat(v, ignore_index=True)
-        .groupby(["x", "y"], as_index=False)
-        .value.mean()
+        k: pd.concat(v, ignore_index=True).groupby(["x", "y"], as_index=False).value.mean()
         for k, v in groups.items()
     }
     for (sample, run, mineral, channel), source in groups.items():
@@ -124,11 +115,11 @@ def comparison_ui(points, state):
         "For each sample/run separately: near-boundary pixels lie within the chosen distance of the other mineral; interior pixels lie farther away. This is proximity to that mineral, not a geometric grain core or proof of physical contact. Coordinates must share a registered µm reference."
     )
     minerals = _remembered_input(
-        "boundary_comparisons:62:13",
         st.multiselect,
         "Minerals to compare",
         sorted({p.mineral_id for p in points.values()}),
         default=sorted({p.mineral_id for p in points.values()}),
+        key="input::boundary_comparisons:62:13",
     )
     from .io import numeric_columns
 
@@ -141,18 +132,18 @@ def comparison_ui(points, state):
         }
     )
     selected = _remembered_input(
-        "boundary_comparisons:65:13",
         st.multiselect,
         "Boundary chemistry columns",
         channels,
         default=channels[:1],
+        key="input::boundary_comparisons:65:13",
     )
     width = _remembered_input(
-        "boundary_comparisons:66:10",
         st.number_input,
         "Mineral-pair buffer distance (µm)",
         min_value=0.0,
         value=10.0,
+        key="input::boundary_comparisons:66:10",
     )
     if st.button("Compare boundary and interior", type="primary"):
         if len(minerals) < 2 or not selected:
@@ -182,7 +173,7 @@ def comparison_ui(points, state):
     if pixels.empty:
         st.info("No comparable mineral pairs in the same sample/run.")
         return
-    # Split channels and datasets so concentrations and pair identities are never pooled.
+
     for identity, g in pixels.groupby(
         ["sample_id", "run_id", "channel", "mineral_id", "other_mineral"]
     ):
@@ -266,12 +257,7 @@ def comparison_ui(points, state):
     ]:
         st.subheader(title)
         st.dataframe(table.head(1000), width="stretch")
-        st.download_button(
-            "Download " + title,
-            table.to_csv(index=False),
-            title.replace(" ", "_") + ".csv",
-            "text/csv",
-        )
+        download_table("Download " + title, table, title.replace(" ", "_") + ".csv")
 
 
 def grain_ui(state, visible_maps):
@@ -291,10 +277,10 @@ def grain_ui(state, visible_maps):
         st.info("Choose Grain Analysis → Detect grains first.")
         return
     source_key = _remembered_input(
-        "boundary_comparisons:112:45",
         st.selectbox,
         "Grain boundary dataset",
         [l.key for l in sources],
+        key="input::boundary_comparisons:112:45",
     )
     source = next(l for l in sources if l.key == source_key)
     labels = state.grain_results[source.key].labels
@@ -303,25 +289,25 @@ def grain_ui(state, visible_maps):
         st.info("No detected grains.")
         return
     grain = _remembered_input(
-        "boundary_comparisons:116:10",
         st.selectbox,
         "Grain to compare",
         ["All grains"] + ids,
+        key="input::boundary_comparisons:116:10",
     )
     candidates = compatible_layers(source, state.layers)
     channel = _remembered_input(
-        "boundary_comparisons:118:12",
         st.selectbox,
         "Grain chemistry channel",
         [l.channel for l in candidates],
+        key="input::boundary_comparisons:118:12",
     )
     layer = next(l for l in candidates if l.channel == channel)
     width = _remembered_input(
-        "boundary_comparisons:120:10",
         st.number_input,
         "Grain rim width (µm)",
         min_value=0.0,
         value=10.0,
+        key="input::boundary_comparisons:120:10",
     )
     selected_ids = ids if grain == "All grains" else [grain]
     parts = []
@@ -334,9 +320,7 @@ def grain_ui(state, visible_maps):
     if table.empty:
         st.info("No finite grain chemistry or no observable outside boundary.")
         return
-    table["zone"] = np.where(
-        abs(table.signed_boundary_distance_um) <= width, "Rim", "Core"
-    )
+    table["zone"] = np.where(abs(table.signed_boundary_distance_um) <= width, "Rim", "Core")
     phase = np.isin(labels, selected_ids)
     render_chart(
         boundary_halo_figure(
@@ -376,9 +360,4 @@ def grain_ui(state, visible_maps):
         channel=channel,
     ).items():
         table[key] = val
-    st.download_button(
-        "Download grain rim/core pixels",
-        table.to_csv(index=False),
-        "grain_rim_core.csv",
-        "text/csv",
-    )
+    download_table("Download grain rim/core pixels", table, "grain_rim_core.csv")
