@@ -1,5 +1,3 @@
-"""Group colors shared by individual REE curves and summaries."""
-
 import plotly.express as px
 from .selection_style import domain_palette
 
@@ -18,9 +16,7 @@ def group_colors(labels, group, state, source, palette):
         shared = (
             state.get("mineral_colors", {})
             if group == "mineral_id"
-            else (
-                domain_palette(state) if group in ("selection_id", "profile_id") else {}
-            )
+            else (domain_palette(state) if group in ("selection_id", "profile_id") else {})
         )
         colors.update({label: shared[label] for label in labels if label in shared})
     return colors
