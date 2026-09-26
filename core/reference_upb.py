@@ -1,25 +1,12 @@
 import numpy as np
 from scipy.stats import chi2 as _chi2_distribution
 
-UPB_LAMBDA_238 = 1.55125e-10
-UPB_LAMBDA_235 = 9.8485e-10
-UPB_U238_U235 = 137.818
-_UPB_76_LOOKUP = None
-_UPB_CONCORDIA_LOOKUP = None
-
-
-def _upb_ratio76_from_date_ma(
-    age_ma, lambda238=UPB_LAMBDA_238, lambda235=UPB_LAMBDA_235, u238_u235=UPB_U238_U235
-):
-    age = np.asarray(age_ma, dtype=float)
-    years = age * 1.0e6
-    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
-        a = np.expm1(lambda235 * years)
-        b = np.expm1(lambda238 * years)
-        ratio = (a / b) / float(u238_u235)
-    limit = (float(lambda235) / float(lambda238)) / float(u238_u235)
-    ratio = np.where(np.abs(years) < 1.0, limit, ratio)
-    return ratio
+from .geochronology import (
+    LAMBDA_238 as UPB_LAMBDA_238,
+    LAMBDA_235 as UPB_LAMBDA_235,
+    U238_U235 as UPB_U238_U235,
+    ratio76_from_age as _upb_ratio76_from_date_ma,
+)
 
 
 def _upb_ratio76_derivative_per_ma(
@@ -36,54 +23,13 @@ def _upb_ratio76_derivative_per_ma(
     return deriv_year * 1.0e6
 
 
-def _upb_date76_ma(
-    ratio, lambda238=UPB_LAMBDA_238, lambda235=UPB_LAMBDA_235, u238_u235=UPB_U238_U235
-):
-    global _UPB_76_LOOKUP
-    values = np.asarray(ratio, dtype=float)
-    shape = values.shape
-    flat = values.ravel()
-    if _UPB_76_LOOKUP is None or _UPB_76_LOOKUP[0:3] != (
-        lambda238,
-        lambda235,
-        u238_u235,
-    ):
-        ages = np.linspace(0.0, 4600.0, 18401)
-        ratios = _upb_ratio76_from_date_ma(ages, lambda238, lambda235, u238_u235)
-        _UPB_76_LOOKUP = (lambda238, lambda235, u238_u235, ages, ratios)
-    ages = _UPB_76_LOOKUP[3]
-    ratios = _UPB_76_LOOKUP[4]
-    result = np.full(flat.shape, np.nan, dtype=float)
-    valid = np.isfinite(flat) & (flat >= ratios[0]) & (flat <= ratios[-1])
-    if np.any(valid):
-        guess = np.interp(flat[valid], ratios, ages)
-        target = flat[valid]
-        for _ in range(7):
-            model = _upb_ratio76_from_date_ma(guess, lambda238, lambda235, u238_u235)
-            deriv = _upb_ratio76_derivative_per_ma(
-                guess, lambda238, lambda235, u238_u235
-            )
-            step = np.divide(
-                model - target,
-                deriv,
-                out=np.zeros_like(guess),
-                where=np.abs(deriv) > 1e-20,
-            )
-            guess = np.clip(guess - step, 0.0, 4600.0)
-        result[valid] = guess
-    result = result.reshape(shape)
-    return float(result) if result.ndim == 0 else result
-
-
 def _upb_concordia_date(
     r75, r68, s75, s68, rho, lambda238=UPB_LAMBDA_238, lambda235=UPB_LAMBDA_235
 ):
     values = np.asarray([r75, r68, s75, s68, rho], dtype=float)
     if not np.isfinite(values).all() or s75 <= 0.0 or s68 <= 0.0:
         return (np.nan, np.nan, np.nan)
-    cov = np.array(
-        [[s75 * s75, rho * s75 * s68], [rho * s75 * s68, s68 * s68]], dtype=float
-    )
+    cov = np.array([[s75 * s75, rho * s75 * s68], [rho * s75 * s68, s68 * s68]], dtype=float)
     try:
         inv = np.linalg.pinv(cov)
     except Exception:
@@ -97,7 +43,6 @@ def _upb_concordia_date(
     lo = max(0.0, ages[max(0, i - 2)])
     hi = min(4600.0, ages[min(len(ages) - 1, i + 2)])
 
-    # objective function minimized by the fit
     def objective(age):
         year = age * 1.0e6
         d = np.array(
@@ -137,29 +82,27 @@ def _upb_concordia_date(
 def _upb_chi2_pvalue(chi2_value, degrees_of_freedom):
     if not np.isfinite(chi2_value) or degrees_of_freedom <= 0:
         return np.nan
-    if _chi2_distribution is None:
-        return np.nan
     return float(_chi2_distribution.sf(float(chi2_value), int(degrees_of_freedom)))
 
 
-def _upb_weighted_mean_composition(x, y, sx, sy, rho):
-    """Generalized least-squares mean of correlated two-dimensional data."""
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    sx = np.asarray(sx, dtype=float)
-    sy = np.asarray(sy, dtype=float)
-    rho = np.asarray(rho, dtype=float)
+def _valid_observations(x, y, sx, sy, rho):
+    x, y, sx, sy, rho = [np.asarray(value, float) for value in (x, y, sx, sy, rho)]
     valid = (
         np.isfinite(x)
         & np.isfinite(y)
         & np.isfinite(sx)
         & np.isfinite(sy)
         & np.isfinite(rho)
-        & (sx > 0.0)
-        & (sy > 0.0)
-        & (np.abs(rho) <= 1.0)
+        & (sx > 0)
+        & (sy > 0)
+        & (np.abs(rho) <= 1)
     )
-    x, y, sx, sy, rho = [array[valid] for array in (x, y, sx, sy, rho)]
+    return *(value[valid] for value in (x, y, sx, sy, rho)), valid
+
+
+def _upb_weighted_mean_composition(x, y, sx, sy, rho):
+
+    x, y, sx, sy, rho, valid = _valid_observations(x, y, sx, sy, rho)
     if x.size == 0:
         return None
     precision_sum = np.zeros((2, 2), dtype=float)
@@ -234,12 +177,7 @@ def _upb_joint_concordia_date(
     expand_mswd=False,
     external_2s_percent=0.0,
 ):
-    """Population concordia date with equivalence, concordance, and combined MSWDs.
 
-    The analytical (internal) covariance determines the weighted mean composition
-    and the equivalence statistic. A shared external percentage is added to the
-    covariance of that mean, so it does not shrink with the number of analyses.
-    """
     composition = _upb_weighted_mean_composition(r75, r68, s75, s68, rho)
     if composition is None:
         return None
@@ -256,9 +194,7 @@ def _upb_joint_concordia_date(
     covariance_total = covariance_internal.copy()
     if external_1s_fraction > 0.0:
         covariance_total += np.diag((np.abs(mean) * external_1s_fraction) ** 2)
-    total_fit = _upb_fit_composition_to_concordia(
-        mean, covariance_total, lambda238, lambda235
-    )
+    total_fit = _upb_fit_composition_to_concordia(mean, covariance_total, lambda238, lambda235)
     if total_fit is None:
         total_fit = dict(internal_fit)
 
@@ -267,13 +203,10 @@ def _upb_joint_concordia_date(
     df_concordance = 1
     df_combined = df_equivalence + df_concordance
 
-    # collect the MSWD and p-value fields for one concordia fit.
     def statistics(fit):
         ss_concordance = fit["ss_concordance"]
         ss_combined = ss_equivalence + ss_concordance
-        mswd_equivalence = (
-            ss_equivalence / df_equivalence if df_equivalence > 0 else np.nan
-        )
+        mswd_equivalence = ss_equivalence / df_equivalence if df_equivalence > 0 else np.nan
         mswd_concordance = ss_concordance / df_concordance
         mswd_combined = ss_combined / df_combined if df_combined > 0 else np.nan
         one_sigma = fit["one_sigma_ma"]
@@ -309,7 +242,6 @@ def _upb_joint_concordia_date(
         "ss_equivalence": float(ss_equivalence),
         "internal": internal,
         "total": total,
-        # Backward-compatible keys use the internal fit.
         "date_ma": internal["date_ma"],
         "one_sigma_ma": internal["one_sigma_ma"],
         "one_sigma_expanded_ma": internal["one_sigma_expanded_ma"],
@@ -320,25 +252,8 @@ def _upb_joint_concordia_date(
     }
 
 
-def _upb_york_fit_fixed_intercept(
-    x, y, sx, sy, rho, fixed_intercept, expand_mswd=False
-):
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    sx = np.asarray(sx, dtype=float)
-    sy = np.asarray(sy, dtype=float)
-    rho = np.asarray(rho, dtype=float)
-    valid = (
-        np.isfinite(x)
-        & np.isfinite(y)
-        & np.isfinite(sx)
-        & np.isfinite(sy)
-        & np.isfinite(rho)
-        & (sx > 0.0)
-        & (sy > 0.0)
-        & (np.abs(rho) <= 1.0)
-    )
-    x, y, sx, sy, rho = [array[valid] for array in (x, y, sx, sy, rho)]
+def _upb_york_fit_fixed_intercept(x, y, sx, sy, rho, fixed_intercept, expand_mswd=False):
+    x, y, sx, sy, rho, valid = _valid_observations(x, y, sx, sy, rho)
     if x.size < 2 or np.nanstd(x) <= 0.0:
         return None
 
@@ -350,7 +265,6 @@ def _upb_york_fit_fixed_intercept(
     data_scale = float(np.nanstd(y) / max(np.nanstd(x), 1e-30))
     search_scale = max(abs(slope_start), abs(data_scale), 1e-8)
 
-    # chi2 used for slope
     def chi2_for_slope(slope):
         slope = float(slope)
         variance = sy * sy + slope * slope * sx * sx - 2.0 * slope * rho * sx * sy
@@ -403,7 +317,6 @@ def _upb_york_fit_fixed_intercept(
     if not np.isfinite(chi2_value):
         return None
 
-    # one side of the 1-sigma interval
     def one_sigma_side(direction):
         target = chi2_value + 1.0
         step = max(search_scale * 1e-3, abs(slope) * 1e-4, 1e-10)
@@ -436,9 +349,7 @@ def _upb_york_fit_fixed_intercept(
     else:
         step = max(search_scale * 1e-5, abs(slope) * 1e-5, 1e-10)
         curvature = (
-            chi2_for_slope(slope + step)
-            - 2.0 * chi2_value
-            + chi2_for_slope(slope - step)
+            chi2_for_slope(slope + step) - 2.0 * chi2_value + chi2_for_slope(slope - step)
         ) / (step * step)
         slope_sigma = float(np.sqrt(2.0 / curvature)) if curvature > 0.0 else np.nan
 
@@ -469,22 +380,7 @@ def _upb_york_fit(x, y, sx, sy, rho, expand_mswd=False, fixed_intercept=None):
         return _upb_york_fit_fixed_intercept(
             x, y, sx, sy, rho, fixed_intercept, expand_mswd=expand_mswd
         )
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    sx = np.asarray(sx, dtype=float)
-    sy = np.asarray(sy, dtype=float)
-    rho = np.asarray(rho, dtype=float)
-    valid = (
-        np.isfinite(x)
-        & np.isfinite(y)
-        & np.isfinite(sx)
-        & np.isfinite(sy)
-        & np.isfinite(rho)
-        & (sx > 0.0)
-        & (sy > 0.0)
-        & (np.abs(rho) <= 1.0)
-    )
-    x, y, sx, sy, rho = [array[valid] for array in (x, y, sx, sy, rho)]
+    x, y, sx, sy, rho, valid = _valid_observations(x, y, sx, sy, rho)
     if x.size < 3 or np.nanstd(x) <= 0.0:
         return None
     slope, intercept = np.polyfit(x, y, 1)
@@ -614,11 +510,8 @@ def _upb_line_concordia_intercepts(
     slope = float(fit["slope"])
     covariance = np.asarray(fit["covariance"], dtype=float)
 
-    # vertical distance between the fitted discordia line and concordia
     def residual(date_ma):
-        x_value, y_value = _upb_concordia_xy(
-            date_ma, plot_type, lambda238, lambda235, u238_u235
-        )
+        x_value, y_value = _upb_concordia_xy(date_ma, plot_type, lambda238, lambda235, u238_u235)
         return float(y_value - intercept - slope * x_value)
 
     grid_start = 0.1 if plot_type == "Tera-Wasserburg" else 0.0
@@ -635,17 +528,11 @@ def _upb_line_concordia_intercepts(
                 roots.append(root)
     output = []
     for root in roots:
-        x_value, _y_value = _upb_concordia_xy(
-            root, plot_type, lambda238, lambda235, u238_u235
-        )
-        dx, dy = _upb_concordia_derivatives(
-            root, plot_type, lambda238, lambda235, u238_u235
-        )
+        x_value, _y_value = _upb_concordia_xy(root, plot_type, lambda238, lambda235, u238_u235)
+        dx, dy = _upb_concordia_derivatives(root, plot_type, lambda238, lambda235, u238_u235)
         denominator = dy - slope * dx
         if abs(denominator) > 1e-20:
-            gradient = np.array(
-                [1.0 / denominator, float(x_value) / denominator], dtype=float
-            )
+            gradient = np.array([1.0 / denominator, float(x_value) / denominator], dtype=float)
             variance = float(gradient @ covariance @ gradient)
             one_sigma = np.sqrt(max(0.0, variance))
         else:
