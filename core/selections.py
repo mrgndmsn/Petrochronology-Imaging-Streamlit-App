@@ -339,3 +339,43 @@ def split_crossed_grains(labels, p0, p1, width_pixels=1, connectivity=8, minimum
     if not changed:
         raise ValueError("The line did not split any retained grain.")
     return updated
+
+
+def remember_selection_change(state, selection_key, table_names=()):
+    history = state.setdefault("selection_history", [])
+    if history and not isinstance(history[-1], dict):
+        history.clear()
+    history.append(
+        {
+            "selection_key": selection_key,
+            "selection": state["selections"].get(selection_key),
+            "tables": {name: state["tables"].get(name) for name in table_names},
+            "active_table_name": state.get("active_table_name"),
+        }
+    )
+    del history[:-20]
+
+
+def undo_selection_change(state):
+    history = state.get("selection_history", [])
+    if not history:
+        return
+    change = history.pop()
+    if not isinstance(change, dict):
+        state["selections"], state["tables"], state["active_table_name"] = change
+        return
+    previous = change["selection"]
+    key = change["selection_key"]
+    if previous is None:
+        state["selections"].pop(key, None)
+    else:
+        state["selections"][key] = previous
+    for name, frame in change["tables"].items():
+        if frame is None:
+            state["tables"].pop(name, None)
+        else:
+            state["tables"][name] = frame
+    active = change["active_table_name"]
+    state["active_table_name"] = (
+        active if active in state["tables"] else next(iter(state["tables"]), None)
+    )
