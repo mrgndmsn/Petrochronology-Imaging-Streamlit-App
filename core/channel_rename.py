@@ -1,24 +1,19 @@
-"""User-controlled literal replacements on pending matrix channel names."""
-
 from collections import Counter
 
 
 def replace_names(names, find, replacement, trim=True):
     if not find:
         raise ValueError("Enter text to find.")
-    changed = {
-        filename: name.replace(find, replacement) for filename, name in names.items()
-    }
-    if trim:
-        changed = {filename: name.strip() for filename, name in changed.items()}
-    values = list(changed.values())
+    changed = {}
+    for filename, name in names.items():
+        updated = name.replace(find, replacement)
+        changed[filename] = updated.strip() if trim else updated
+    values = changed.values()
     if any(not name or "::" in name for name in values):
         raise ValueError("Names must be nonempty and cannot contain ::.")
     duplicates = [name for name, count in Counter(values).items() if count > 1]
     if duplicates:
-        raise ValueError(
-            "Replacement creates duplicate channel names: " + ", ".join(duplicates)
-        )
+        raise ValueError("Replacement creates duplicate channel names: " + ", ".join(duplicates))
     return changed
 
 
@@ -31,9 +26,7 @@ def bulk_channel_names(files):
     if not files:
         return
     current = {
-        f.name: st.session_state.get(
-            "matrix_channel_" + f.name, matrix_channel_name(f.name)
-        )
+        f.name: st.session_state.get("matrix_channel_" + f.name, matrix_channel_name(f.name))
         for f in files
     }
     st.subheader("Bulk edit channel names")
@@ -41,14 +34,9 @@ def bulk_channel_names(files):
         "Changes the channel names below for this upload batch. Replacements are literal and case-sensitive. Leave Replace with empty to delete text; repeat for additional text."
     )
     a, b = st.columns(2)
-    find = remembered_input(
-        "matrix_bulk_find", a.text_input, "Find text", key="matrix_bulk_find"
-    )
-    replacement = remembered_input(
-        "matrix_bulk_replace", b.text_input, "Replace with", key="matrix_bulk_replace"
-    )
+    find = remembered_input(a.text_input, "Find text", key="matrix_bulk_find")
+    replacement = remembered_input(b.text_input, "Replace with", key="matrix_bulk_replace")
     trim = remembered_input(
-        "matrix_bulk_trim",
         st.checkbox,
         "Trim spaces at the beginning and end",
         value=True,
@@ -76,9 +64,7 @@ def bulk_channel_names(files):
             st.error(str(exc))
     changed = proposed is not None and proposed != current
     apply, undo = st.columns(2)
-    if apply.button(
-        "Apply to all channel names", disabled=not changed, key="matrix_bulk_apply"
-    ):
+    if apply.button("Apply to all channel names", disabled=not changed, key="matrix_bulk_apply"):
         st.session_state["matrix_bulk_undo"] = current.copy()
         for name, value in proposed.items():
             st.session_state["matrix_channel_" + name] = value
