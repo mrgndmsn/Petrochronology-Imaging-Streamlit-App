@@ -33,12 +33,8 @@ def assignment(prefix):
     mineral = cols[1].text_input("Mineral ID", key=f"{prefix}_mineral")
     run = cols[2].text_input("Run ID", key=f"{prefix}_run")
     cols = st.columns(2)
-    dx = cols[0].number_input(
-        "X pixel size (µm)", min_value=1e-12, value=None, key=f"{prefix}_dx"
-    )
-    dy = cols[1].number_input(
-        "Y pixel size (µm)", min_value=1e-12, value=None, key=f"{prefix}_dy"
-    )
+    dx = cols[0].number_input("X pixel size (µm)", min_value=1e-12, value=None, key=f"{prefix}_dx")
+    dy = cols[1].number_input("Y pixel size (µm)", min_value=1e-12, value=None, key=f"{prefix}_dy")
     return sample, mineral, run, dx, dy
 
 
@@ -58,9 +54,7 @@ def commit_layers(layers):
     )
 
 
-project_file = st.file_uploader(
-    "Open a saved project", type=["zip"], key="project_upload"
-)
+project_file = st.file_uploader("Open a saved project", type=["zip"], key="project_upload")
 if project_file is not None and st.button("Load complete project"):
     try:
         restored = load_project(project_file.getvalue())
@@ -111,10 +105,8 @@ with st.expander("Import data", expanded=True):
                 ["Raster channels", "Point layer", "Analysis table"],
                 horizontal=True,
             )
-            # Preview rows may be empty for valid chemistry channels. Offer every column.
-            numbers = sorted(
-                frame.columns, key=lambda value: (str(value).casefold(), str(value))
-            )
+
+            numbers = sorted(frame.columns, key=lambda value: (str(value).casefold(), str(value)))
             choices = ["None"] + sorted(
                 frame.columns, key=lambda value: (str(value).casefold(), str(value))
             )
@@ -148,9 +140,7 @@ with st.expander("Import data", expanded=True):
                 table["pixel_size_x_um"], table["pixel_size_y_um"] = dx, dy
                 name = f"{mode} | {sample} | {mineral} | {run} | {uploaded.name}"
                 if name in st.session_state.tables:
-                    raise ValueError(
-                        "This table already exists. Choose a different run."
-                    )
+                    raise ValueError("This table already exists. Choose a different run.")
                 if mode == "Raster channels":
                     if not channels:
                         raise ValueError("Select at least one value channel.")
@@ -254,9 +244,7 @@ with st.expander("Import aligned matrix files"):
     st.caption(
         "Coordinate references must match the raw channel shapes. Both are required together; their physical centers replace origin/axis coordinates, while the explicit X/Y sizes define pixel footprint."
     )
-    collapse = st.checkbox(
-        "Collapse repeated X/Y coordinates (mean per pixel)", value=False
-    )
+    collapse = st.checkbox("Collapse repeated X/Y coordinates (mean per pixel)", value=False)
     if x_reference is not None and y_reference is not None:
         st.info(
             "The X/Y reference files set the positions; both origin fields are ignored. Upload chemistry matrices above, and X/Y matrices only in their reference slots."
@@ -282,17 +270,13 @@ with st.expander("Import aligned matrix files"):
             if len(set(names)) != len(names) or any(not n or "::" in n for n in names):
                 raise ValueError("Choose unique, nonempty channel names without ::.")
             xcoords = (
-                read_numeric_matrix(x_reference.getvalue())
-                if x_reference is not None
-                else None
+                read_numeric_matrix(x_reference.getvalue()) if x_reference is not None else None
             )
             ycoords = (
-                read_numeric_matrix(y_reference.getvalue())
-                if y_reference is not None
-                else None
+                read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None
             )
             if collapse:
-                # Do not retain the entire expanded chemistry stack in memory.
+
                 layers = {}
                 for f in files:
                     part = matrix_layers(
@@ -308,8 +292,7 @@ with st.expander("Import aligned matrix files"):
                     layers.update(part)
             else:
                 records = [
-                    (channels[f.name], f.name, read_numeric_matrix(f.getvalue()))
-                    for f in files
+                    (channels[f.name], f.name, read_numeric_matrix(f.getvalue())) for f in files
                 ]
                 layers = matrix_layers(
                     records,
