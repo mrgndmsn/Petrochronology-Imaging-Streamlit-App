@@ -3,27 +3,18 @@ import numpy as np
 import pandas as pd
 
 
-def mineral_fraction_table(
-    point_layers, samples=None, mode="pixels", value_column=None
-):
+def mineral_fraction_table(point_layers, samples=None, mode="pixels", value_column=None):
     rows = []
     for layer in point_layers.values():
         if samples and layer.sample_id not in samples:
             continue
         if mode == "pixels":
             value = len(layer.frame)
-        elif mode == "mean":
-            value = (
-                pd.to_numeric(layer.frame[value_column], errors="coerce").mean()
-                if value_column in layer.frame
-                else np.nan
-            )
+        elif value_column in layer.frame:
+            values = pd.to_numeric(layer.frame[value_column], errors="coerce")
+            value = values.mean() if mode == "mean" else values.sum()
         else:
-            value = (
-                pd.to_numeric(layer.frame[value_column], errors="coerce").sum()
-                if value_column in layer.frame
-                else np.nan
-            )
+            value = np.nan
         rows.append(
             {
                 "sample_id": layer.sample_id,
@@ -111,9 +102,7 @@ def boundary_pair_tables(table, value_columns, inside_column="inside_phase"):
     return summary, pd.DataFrame(pairs)
 
 
-def profile_envelope(
-    frame, x, values, group, bins, envelope, positive_only=True, robust=True
-):
+def profile_envelope(frame, x, values, group, bins, envelope, positive_only=True, robust=True):
     work = frame.copy()
     work[x] = pd.to_numeric(work[x], errors="coerce").replace([np.inf, -np.inf], np.nan)
     work = work.dropna(subset=[x])
@@ -167,23 +156,13 @@ def profile_envelope(
     return pd.DataFrame(rows)
 
 
-def grouped_upb_means(
-    frame, group_columns, ratio_columns, ratio_method="Mean of pixel ratios"
-):
-    """Paired arithmetic means and covariance of means; errors are sample SEMs.
+def grouped_upb_means(frame, group_columns, ratio_columns, ratio_method="Mean of pixel ratios"):
 
-    For three ratios, the order is 206Pb/238U, 207Pb/235U, 207Pb/206Pb.
-    Product mode propagates the covariance of the two factor means.
-    """
     if len(set(ratio_columns)) != len(ratio_columns):
         raise ValueError("Ratio columns must be distinct.")
     if ratio_method not in ("Mean of pixel ratios", "Ratio of means/product"):
         raise ValueError("Unknown ratio averaging method.")
-    groups = (
-        frame.groupby(group_columns, dropna=False)
-        if group_columns
-        else [("All data", frame)]
-    )
+    groups = frame.groupby(group_columns, dropna=False) if group_columns else [("All data", frame)]
     rows = []
     for identity, subset in groups:
         identity = identity if isinstance(identity, tuple) else (identity,)
@@ -232,7 +211,7 @@ def grouped_upb_means(
                 )
                 c_w = 137.818 * (b * covariance.loc[r68, r68] + a * c68_76)
             s68, s75, s76 = [row[f"{c}_1se_internal"] for c in (r68, r75, r76)]
-            # Tera–Wasserburg transforms the group mean, not each individual pixel.
+
             s86 = s68 / means[r68] ** 2 if means[r68] != 0 else np.nan
             c_tw = -c68_76 / means[r68] ** 2 if means[r68] != 0 else np.nan
             row.update(
@@ -249,9 +228,7 @@ def grouped_upb_means(
             a, b = ratio_columns
             c = covariance.loc[a, b]
             row["direct_covariance_mean"] = c
-            row["rho_direct"] = correlation(
-                c, row[f"{a}_1se_internal"], row[f"{b}_1se_internal"]
-            )
+            row["rho_direct"] = correlation(c, row[f"{a}_1se_internal"], row[f"{b}_1se_internal"])
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -266,16 +243,12 @@ def ordered_channels(selected, order_text):
 
 
 def element_fraction_table(point_layers, channels, statistic="mean"):
-    """Positive concentration contributions; not whole-rock mass/volume fractions."""
+
     stats = mineral_variability_table(point_layers, channels)
     if stats.empty:
         return stats
-    stats["value"] = (
-        stats["mean"] if statistic == "mean" else stats["mean"] * stats["n"]
-    )
-    stats["value"] = stats.value.where(
-        np.isfinite(stats.value) & (stats.value > 0), 0.0
-    )
+    stats["value"] = stats["mean"] if statistic == "mean" else stats["mean"] * stats["n"]
+    stats["value"] = stats.value.where(np.isfinite(stats.value) & (stats.value > 0), 0.0)
     total = stats.groupby(["sample_id", "run_id", "channel"]).value.transform("sum")
     stats["percent"] = 100 * stats.value / total.replace(0, np.nan)
     stats["_order"] = stats.channel.map({c: i for i, c in enumerate(channels)})
@@ -340,6 +313,6 @@ def mineral_nearest_neighbor_tables(layers, maximum=5000):
                         p95_um=d.quantile(0.95),
                     )
                 )
-    return (
-        pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
-    ), pd.DataFrame(summaries)
+    return (pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()), pd.DataFrame(
+        summaries
+    )
