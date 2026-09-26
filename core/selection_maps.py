@@ -1,5 +1,3 @@
-"""Select one geometry across visible datasets without merging mineral identities."""
-
 import hashlib
 import numpy as np
 import pandas as pd
@@ -20,9 +18,7 @@ def selection_context(layers):
         return layers[0].key
     return (
         "combined::"
-        + hashlib.sha256("|".join(sorted(l.key for l in layers)).encode()).hexdigest()[
-            :16
-        ]
+        + hashlib.sha256("|".join(sorted(l.key for l in layers)).encode()).hexdigest()[:16]
     )
 
 
@@ -65,9 +61,7 @@ def collect_geometry(
         f["selection_id"] = name
         f["source_layer_key"] = layer.key
         parts.append(f)
-    result = (
-        pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
-    )
+    result = pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
     result.attrs["selection_geometry"] = {
         "kind": kind,
         "coordinates": np.asarray(geometry, float).tolist(),
@@ -90,7 +84,7 @@ def combined_map_figure(layers, overlays, color_by, palette, **display):
 
 
 def profile_plot_table(table, channels, bin_count=0):
-    """Keep datasets separate when drawing or binning multi-map profiles."""
+
     parts = []
     identity = ["sample_id", "mineral_id", "run_id"]
     for channel in channels:
@@ -110,25 +104,21 @@ def profile_plot_table(table, channels, bin_count=0):
         part["dataset"] = part[identity].astype(str).agg(" | ".join, axis=1)
         parts.append(part)
     return (
-        pd.concat(parts, ignore_index=True).sort_values(
-            ["dataset", "channel", "distance_um"]
-        )
+        pd.concat(parts, ignore_index=True).sort_values(["dataset", "channel", "distance_um"])
         if parts
         else pd.DataFrame()
     )
 
 
 def filtered_saved_selections(selections, layers):
-    """Show saved rows from visible datasets without modifying saved originals."""
+
     keys = {layer.key for layer in layers}
+    ids = ["sample_id", "mineral_id", "run_id"]
+    identities = {tuple(str(getattr(layer, c)) for c in ids) for layer in layers}
     result = {}
     for key, table in selections.items():
-        ids = ["sample_id", "mineral_id", "run_id"]
         if set(ids).issubset(table.columns):
-            # Domains belong to the dataset, not only the channel used to draw them.
-            identities = {
-                tuple(str(getattr(layer, c)) for c in ids) for layer in layers
-            }
+
             mask = pd.Series(
                 [
                     tuple(map(str, row)) in identities
@@ -139,16 +129,14 @@ def filtered_saved_selections(selections, layers):
         elif "source_layer_key" in table:
             mask = table.source_layer_key.isin(keys)
         else:
-            # Older single-map selections encode their source in the saved key.
+
             matching = [layer for layer in layers if key.startswith(layer.key + "::")]
             mask = pd.Series(False, index=table.index)
             for layer in matching:
                 current = pd.Series(True, index=table.index)
                 for column in ("sample_id", "mineral_id", "run_id"):
                     if column in table:
-                        current &= (
-                            table[column].astype(str).eq(str(getattr(layer, column)))
-                        )
+                        current &= table[column].astype(str).eq(str(getattr(layer, column)))
                 mask |= current
         subset = table.loc[mask].copy()
         if not subset.empty:
@@ -167,7 +155,7 @@ def map_overlay_figure(
     show_domain_labels=True,
     **display,
 ):
-    """Overlay visible datasets; keep all grain and selection decorations on top."""
+
     import plotly.graph_objects as go
 
     finite = [l.values[np.isfinite(l.values)] for l in layers]
@@ -182,9 +170,7 @@ def map_overlay_figure(
     for index, layer in enumerate(layers):
         result = results.get(layer.key)
         local_centers = {
-            k[len(layer.key) + 2 :]: v
-            for k, v in centers.items()
-            if k.startswith(layer.key + "::")
+            k[len(layer.key) + 2 :]: v for k, v in centers.items() if k.startswith(layer.key + "::")
         }
         options = dict(display)
         if index:
@@ -195,8 +181,6 @@ def map_overlay_figure(
         if mineral_raster:
             from dataclasses import replace
 
-            # Use the existing grid directly; do not expand it to an XY table
-            # and then reconstruct the same raster for categorical coloring.
             mask = np.full(layer.values.shape, np.nan, dtype=np.float32)
             mask[np.isfinite(layer.values)] = 1
             render_layer = replace(layer, values=mask)
@@ -244,9 +228,7 @@ def map_overlay_figure(
                 palette[layer.mineral_id],
                 1.0,
             ):
-                raster.data[0].update(
-                    legendgroup=layer.mineral_id, meta={"color_by": "mineral_id"}
-                )
+                raster.data[0].update(legendgroup=layer.mineral_id, meta={"color_by": "mineral_id"})
                 backgrounds.append(raster.data[0])
             else:
                 backgrounds.append(
@@ -257,16 +239,13 @@ def map_overlay_figure(
                         name=layer.mineral_id,
                         legendgroup=layer.mineral_id,
                         meta={"color_by": "mineral_id"},
-                        marker=dict(
-                            color=palette[layer.mineral_id], size=5, symbol="square"
-                        ),
+                        marker=dict(color=palette[layer.mineral_id], size=5, symbol="square"),
                         hovertemplate=f"{layer.sample_id} | {layer.mineral_id} | {layer.run_id}<br>X=%{{x}}<br>Y=%{{y}}<extra></extra>",
                     )
                 )
         else:
             backgrounds.append(current.data[0])
-        # Mineral pixels use WebGL. Keep decorations in the same renderer so
-        # SVG traces cannot be hidden underneath the WebGL canvas.
+
         for trace in current.data[1:]:
             if trace.type == "scatter":
                 spec = trace.to_plotly_json()
@@ -282,9 +261,7 @@ def map_overlay_figure(
     figure.update_layout(
         meta={
             "map_layer_key": selection_context(layers),
-            "dataset_identities": [
-                [l.sample_id, l.mineral_id, l.run_id] for l in layers
-            ],
+            "dataset_identities": [[l.sample_id, l.mineral_id, l.run_id] for l in layers],
         },
         title=layers[0].channel,
         legend_title="Mineral" if color_by == "Mineral" else None,
