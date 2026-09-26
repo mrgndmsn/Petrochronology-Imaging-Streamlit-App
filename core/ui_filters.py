@@ -4,7 +4,6 @@ import streamlit as st
 import numpy as np
 from .provenance import apply_filters
 
-
 FILTER_COLUMNS = [
     "sample_id",
     "mineral_id",
@@ -26,13 +25,10 @@ def filter_table_ui(frame, source_name, key_prefix="plot"):
         for column in columns:
             values = sorted(frame[column].dropna().astype(str).unique().tolist())
             filters[column] = _remembered_input(
-                "ui_filters:28:30",
                 st.multiselect,
                 column.replace("_", " ").title(),
                 values,
-                default=(
-                    values if column in ("sample_id", "mineral_id", "run_id") else []
-                ),
+                default=(values if column in ("sample_id", "mineral_id", "run_id") else []),
                 key=f"{key_prefix}::{source_name}::{column}",
             )
     effective = {
@@ -59,12 +55,7 @@ def filter_layers_ui(layers, key):
         ]:
             choices = sorted({getattr(l, column) for l in visible})
             chosen = _remembered_input(
-                "ui_filters:50:19",
-                st.multiselect,
-                label,
-                choices,
-                default=choices,
-                key=key + "_" + column,
+                st.multiselect, label, choices, default=choices, key=key + "_" + column
             )
             visible = [l for l in visible if getattr(l, column) in chosen]
     return visible
@@ -77,13 +68,10 @@ def channel_layers_ui(state, key, grain_results_only=False):
     if not layers:
         st.info("No matching raster maps are available.")
         st.stop()
-    channels = sorted(
-        {l.channel for l in layers}, key=lambda value: (value.casefold(), value)
-    )
+    channels = sorted({l.channel for l in layers}, key=lambda value: (value.casefold(), value))
     populated = {l.channel for l in layers if np.isfinite(l.values).any()}
     first = next((i for i, c in enumerate(channels) if c in populated), 0)
     channel = _remembered_input(
-        "ui_filters:64:12",
         st.selectbox,
         "Channel",
         channels,
@@ -124,8 +112,6 @@ def persistent_selectbox(label, options, key, container=None, index=0):
     previous = st.session_state.get(key + "_remembered")
     if previous in options:
         index = options.index(previous)
-    selected = _remembered_input(
-        "ui_filters:84:13", target.selectbox, label, options, index=index, key=key
-    )
+    selected = _remembered_input(target.selectbox, label, options, index=index, key=key)
     st.session_state[key + "_remembered"] = selected
     return selected
