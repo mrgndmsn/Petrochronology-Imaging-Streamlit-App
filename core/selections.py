@@ -13,12 +13,7 @@ def coordinate_grids(layer: MapLayer):
 
 def rectangle_mask(layer: MapLayer, x0, x1, y0, y1):
     xx, yy = coordinate_grids(layer)
-    return (
-        (xx >= min(x0, x1))
-        & (xx <= max(x0, x1))
-        & (yy >= min(y0, y1))
-        & (yy <= max(y0, y1))
-    )
+    return (xx >= min(x0, x1)) & (xx <= max(x0, x1)) & (yy >= min(y0, y1)) & (yy <= max(y0, y1))
 
 
 def polygon_mask(layer: MapLayer, vertices):
@@ -55,9 +50,7 @@ def polyline_distance(layer: MapLayer, points):
         length2 = float(vector @ vector)
         if length2 <= 0:
             continue
-        t = np.clip(
-            ((qx - p0[0]) * vector[0] + (qy - p0[1]) * vector[1]) / length2, 0, 1
-        )
+        t = np.clip(((qx - p0[0]) * vector[0] + (qy - p0[1]) * vector[1]) / length2, 0, 1)
         nearest_x = p0[0] + t * vector[0]
         nearest_y = p0[1] + t * vector[1]
         distance = np.hypot(qx - nearest_x, qy - nearest_y)
@@ -135,9 +128,7 @@ def selection_summary(table):
     }
 
 
-def split_grain(
-    labels, grain_id, p0, p1, width_pixels=1, connectivity=8, minimum_pixels=1
-):
+def split_grain(labels, grain_id, p0, p1, width_pixels=1, connectivity=8, minimum_pixels=1):
     labels = np.asarray(labels, dtype=int).copy()
     target = labels == int(grain_id)
     if not target.any():
@@ -200,7 +191,7 @@ def nearest_neighbor_stats(points_a, points_b=None):
         return pd.DataFrame(columns=columns)
     distances, indices = cKDTree(b).query(a, k=2 if points_b is None else 1)
     if points_b is None:
-        # Tied coordinates need not be ordered with the query itself first.
+
         choice = np.where(indices[:, 0] == np.arange(len(a)), 1, 0)
         distances, indices = (
             distances[np.arange(len(a)), choice],
@@ -230,9 +221,7 @@ def boundary_buffer_stats(layer: MapLayer, phase_mask, buffer_um):
     for axis in (layer.x, layer.y):
         if len(axis) > 1:
             steps = np.diff(axis)
-            regular &= bool(
-                np.allclose(steps, steps[0], rtol=0, atol=1e-6) and steps[0] != 0
-            )
+            regular &= bool(np.allclose(steps, steps[0], rtol=0, atol=1e-6) and steps[0] != 0)
     if len(layer.x) > 1:
         dx = abs(float(layer.x[1] - layer.x[0]))
     if len(layer.y) > 1:
@@ -268,7 +257,7 @@ def boundary_buffer_stats(layer: MapLayer, phase_mask, buffer_um):
 
 
 def sampled_profile(reference, layers, vertices, step_um, method="bilinear"):
-    """Interpolate all same-dataset channels along an ordered physical polyline."""
+
     from scipy.interpolate import RegularGridInterpolator
     from .provenance import compatible_layers
 
@@ -333,9 +322,7 @@ def sampled_profile(reference, layers, vertices, step_um, method="bilinear"):
     return out
 
 
-def split_crossed_grains(
-    labels, p0, p1, width_pixels=1, connectivity=8, minimum_pixels=1
-):
+def split_crossed_grains(labels, p0, p1, width_pixels=1, connectivity=8, minimum_pixels=1):
     updated = np.asarray(labels, int).copy()
     changed = 0
     for gid in np.unique(labels):
