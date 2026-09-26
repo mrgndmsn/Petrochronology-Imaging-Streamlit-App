@@ -52,21 +52,14 @@ def mineral_layers_ui(state, key, coordinates_only=False):
         choices.append("Point tables")
     if state.layers:
         choices.append("Raster mineral maps")
-    mode = _remembered_input(
-        "mineral_layers:31:9",
-        st.selectbox,
-        "Mineral data source",
-        choices,
-        key=f"{key}_source",
-    )
+    mode = _remembered_input(st.selectbox, "Mineral data source", choices, key=f"{key}_source")
     points = dict(state.point_layers) if mode != "Raster mineral maps" else {}
     if state.layers and mode != "Point tables":
         groups = {}
         for layer in state.layers.values():
             identity = (layer.sample_id, layer.mineral_id, layer.run_id)
             if mode == "All imported minerals" and any(
-                (p.sample_id, p.mineral_id, p.run_id) == identity
-                for p in points.values()
+                (p.sample_id, p.mineral_id, p.run_id) == identity for p in points.values()
             ):
                 continue
             groups.setdefault(identity, []).append(layer)
@@ -78,12 +71,9 @@ def mineral_layers_ui(state, key, coordinates_only=False):
                     + ("" if np.isfinite(l.values).any() else " (no finite values)")
                     for l in group
                 }
-                first = next(
-                    (i for i, l in enumerate(group) if np.isfinite(l.values).any()), 0
-                )
+                first = next((i for i, l in enumerate(group) if np.isfinite(l.values).any()), 0)
                 refs.append(
                     _remembered_input(
-                        "mineral_layers:44:28",
                         st.selectbox,
                         "Presence channel | " + " | ".join(identity),
                         list(labels),
@@ -93,14 +83,12 @@ def mineral_layers_ui(state, key, coordinates_only=False):
                     )
                 )
             rule = _remembered_input(
-                "mineral_layers:45:17",
                 st.selectbox,
                 "Presence rule",
                 ["Finite pixels", "Greater than threshold"],
                 key=f"{key}_presence_rule",
             )
             threshold = _remembered_input(
-                "mineral_layers:46:22",
                 st.number_input,
                 "Mineral presence threshold",
                 value=0.0,
