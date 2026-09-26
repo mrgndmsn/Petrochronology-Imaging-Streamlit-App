@@ -1,5 +1,3 @@
-"""Ordered navigation; run only the selected tool to preserve widget isolation."""
-
 from pathlib import Path
 from functools import partial
 from .page_memory import run_page, preserve_widget_state, remembered_input
@@ -13,10 +11,8 @@ def run_tool(relative):
 
 
 def tool_tabs(label, choices, key):
-    # A single active tool avoids running expensive hidden analyses and prevents
-    # st.stop() in an empty tool from blocking its neighboring tools.
+
     selected = remembered_input(
-        key,
         st.segmented_control,
         label,
         list(choices),
