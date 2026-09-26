@@ -66,9 +66,7 @@ def all_channel_pixel_table(reference: MapLayer, rows, columns, layers) -> pd.Da
     return table
 
 
-def grain_pixels_all_channels(
-    reference: MapLayer, result: GrainResult, layers
-) -> pd.DataFrame:
+def grain_pixels_all_channels(reference: MapLayer, result: GrainResult, layers) -> pd.DataFrame:
     rows, columns = np.where(result.labels > 0)
     table = all_channel_pixel_table(reference, rows, columns, layers)
     table["grain_id"] = result.labels[rows, columns].astype(int)
@@ -82,9 +80,7 @@ def grain_pixels_all_channels(
     return table
 
 
-def grain_summary_all_channels(
-    reference: MapLayer, result: GrainResult, layers
-) -> pd.DataFrame:
+def grain_summary_all_channels(reference: MapLayer, result: GrainResult, layers) -> pd.DataFrame:
     pixels = grain_pixels_all_channels(reference, result, layers)
     summary = result.shape_table.copy()
     summary["grain_layer_key"] = reference.key
@@ -161,9 +157,7 @@ def ellipse_radial_table(
         if gid not in ids:
             continue
         rows, columns = (
-            np.indices(result.labels.shape)
-            if use_full_ellipse
-            else np.where(result.labels == gid)
+            np.indices(result.labels.shape) if use_full_ellipse else np.where(result.labels == gid)
         )
         rows, columns = rows.ravel(), columns.ravel()
         if not len(rows):
@@ -222,9 +216,7 @@ def intensity_core_rim_labels(
     output["core_rim_label"] = output.get("radial_zone", "unknown")
     output["core_rim_classification_value"] = value_column
     for _gid, index in output.groupby("grain_id").groups.items():
-        values = pd.to_numeric(
-            output.loc[index, value_column], errors="coerce"
-        ).to_numpy(float)
+        values = pd.to_numeric(output.loc[index, value_column], errors="coerce").to_numpy(float)
         radial = pd.to_numeric(
             output.loc[index, "radial_distance_normalized"], errors="coerce"
         ).to_numpy(float)
@@ -259,9 +251,7 @@ def ordered_spokes(shape, center, count):
     phi_start = max((0.0, np.pi), key=lambda phi: (edge(phi)[1], edge(phi)[0]))
     start_angle = np.arctan2(edge(phi_start)[1] - cy, edge(phi_start)[0] - cx)
     candidates = []
-    for phi in np.mod(
-        phi_start + np.arange(int(count)) * 2 * np.pi / int(count), 2 * np.pi
-    ):
+    for phi in np.mod(phi_start + np.arange(int(count)) * 2 * np.pi / int(count), 2 * np.pi):
         xedge, yedge = edge(phi)
         angle = np.arctan2(yedge - cy, xedge - cx)
         candidates.append((np.mod(start_angle - angle, 2 * np.pi), phi, xedge, yedge))
@@ -392,9 +382,7 @@ def spoke_profile_table(
         "profile_id",
         "distance_bin",
     ]
-    binned = (
-        pixels.groupby(keys, dropna=False)[values].mean(numeric_only=True).reset_index()
-    )
+    binned = pixels.groupby(keys, dropna=False)[values].mean(numeric_only=True).reset_index()
     return pixels, binned
 
 
@@ -407,7 +395,7 @@ def apply_filters(frame, filters):
 
 
 def refit_moved_ellipse(reference, result, grain_id, center):
-    """Reference long-axis refit: keep angle and expand axes around the moved center."""
+
     row = result.shape_table.loc[result.shape_table.grain_id == int(grain_id)].iloc[0]
     rows, cols = np.where(result.labels == int(grain_id))
     theta = np.radians(float(row.orientation_deg))
