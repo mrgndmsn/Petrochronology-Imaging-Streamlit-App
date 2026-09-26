@@ -30,9 +30,7 @@ def static_figure_bytes(figure, format="png", width=1200, height=800, scale=1):
             "Use an export size of at most 16 million pixels (for example, 4000 × 4000). Larger exports can exhaust server memory."
         )
     if not _STATIC_EXPORT_LOCK.acquire(blocking=False):
-        raise RuntimeError(
-            "Another figure is being exported. Please try again after it finishes."
-        )
+        raise RuntimeError("Another figure is being exported. Please try again after it finishes.")
     try:
         return figure.to_image(
             format=format, width=int(width), height=int(height), scale=float(scale)
@@ -42,21 +40,18 @@ def static_figure_bytes(figure, format="png", width=1200, height=800, scale=1):
 
 
 def normalize_selection_data(figure):
-    # Plotly 6 encodes numpy arrays as dtype/bdata objects. Some selection-event
-    # paths forward those objects instead of decoding the per-point row values.
-    # Object arrays retain the same values and serialize as plain JSON arrays.
+
     for trace in figure.data:
         data = getattr(trace, "customdata", None)
         if isinstance(data, np.ndarray) and data.dtype != object:
-            # Plotly skips assignments that compare equal, even if dtype changed.
+
             trace.customdata = None
             trace.customdata = data.astype(object)
     return figure
 
 
 def fixed_map_window(figure, equal_scale=True):
-    # With constrain='domain', Plotly preserves a narrow zoom range by shrinking
-    # the axes inside the canvas. Preserve the canvas and expand ranges instead.
+
     figure.update_xaxes(domain=[0, 1], constrain="range")
     figure.update_yaxes(
         domain=[0, 1],
@@ -86,8 +81,7 @@ def render_chart(figure, **kwargs):
         else None
     )
     chart_key = kwargs.setdefault("key", f"chart_{page}_{count}")
-    # Keep the categorical legend above the plotting area and color scales at
-    # the right, rather than occupying the same strip.
+
     figure.update_layout(
         legend=dict(
             orientation="h",
@@ -107,9 +101,7 @@ def render_chart(figure, **kwargs):
         from .map_layout import data_bounds
 
         bounds = data_bounds(figure)
-        figure.update_layout(
-            meta={**dict(figure.layout.meta), "full_data_bounds": bounds}
-        )
+        figure.update_layout(meta={**dict(figure.layout.meta), "full_data_bounds": bounds})
         figure.update_layout(
             legend=dict(orientation="v", x=1.12, y=1, yanchor="top"),
             margin=dict(t=45, r=260, b=65),
@@ -123,7 +115,6 @@ def render_chart(figure, **kwargs):
         if reset:
             st.session_state[epoch_key] = st.session_state.get(epoch_key, 0) + 1
         lock = _remembered_input(
-            "exports:58:13",
             st.checkbox,
             "Equal X/Y scale",
             value=(figure.layout.meta or {}).get("equal_scale_default", True),
@@ -132,12 +123,14 @@ def render_chart(figure, **kwargs):
         )
         with st.expander("Map orientation"):
             flip_x = _remembered_input(
-                "map_flip_x", st.checkbox, "Flip X axis",
+                st.checkbox,
+                "Flip X axis",
                 value=figure.layout.xaxis.autorange == "reversed",
                 key=f"{chart_key}_flip_x",
             )
             flip_y = _remembered_input(
-                "map_flip_y", st.checkbox, "Flip Y axis",
+                st.checkbox,
+                "Flip Y axis",
                 value=figure.layout.yaxis.autorange == "reversed",
                 key=f"{chart_key}_flip_y",
             )
@@ -168,14 +161,12 @@ def render_chart(figure, **kwargs):
     controls(figure, st.session_state, prefix, prepared_colors)
     with st.expander("Export this figure"):
         fmt = _remembered_input(
-            "exports:72:12",
             st.selectbox,
             "Figure format",
             ["PNG", "SVG", "PDF", "Offline HTML"],
             key=prefix + "_format",
         )
         width = _remembered_input(
-            "exports:73:14",
             st.number_input,
             "Export width (pixels)",
             200,
@@ -184,7 +175,6 @@ def render_chart(figure, **kwargs):
             key=prefix + "_width",
         )
         height = _remembered_input(
-            "exports:74:15",
             st.number_input,
             "Export height (pixels)",
             200,
@@ -234,3 +224,10 @@ def render_chart(figure, **kwargs):
                     "For PNG, try the camera button above the plot, which uses your browser. Offline HTML is also available without Chrome on the server."
                 )
     return event
+
+
+def download_table(label, table, filename, *, container=None, **kwargs):
+    import streamlit as st
+
+    target = container if container is not None else st
+    return target.download_button(label, table.to_csv(index=False), filename, "text/csv", **kwargs)
