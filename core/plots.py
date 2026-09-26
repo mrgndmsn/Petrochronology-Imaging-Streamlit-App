@@ -38,9 +38,9 @@ def map_figure(
     rectilinear = True
     if "x_grid" in layer.metadata:
         xx, yy = layer.coordinate_grids()
-        rectilinear = np.allclose(
-            xx, layer.x[None, :], rtol=0, atol=1e-6
-        ) and np.allclose(yy, layer.y[:, None], rtol=0, atol=1e-6)
+        rectilinear = np.allclose(xx, layer.x[None, :], rtol=0, atol=1e-6) and np.allclose(
+            yy, layer.y[:, None], rtol=0, atol=1e-6
+        )
     if not rectilinear:
         figure.add_trace(
             go.Scattergl(
@@ -56,9 +56,7 @@ def map_figure(
                     cmin=vmin,
                     cmax=vmax,
                     showscale=show_colorbar,
-                    colorbar=dict(
-                        title=("log10 " if log_color else "") + layer.channel
-                    ),
+                    colorbar=dict(title=("log10 " if log_color else "") + layer.channel),
                 ),
                 hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",
                 name=layer.channel,
@@ -71,6 +69,8 @@ def map_figure(
                 customdata=layer.values,
                 x=layer.x,
                 y=layer.y,
+                dx=layer.pixel_size[0],
+                dy=layer.pixel_size[1],
                 colorscale=colorscale,
                 zmin=vmin,
                 zmax=vmax,
@@ -157,7 +157,7 @@ def map_figure(
 
 
 def _add_selection_surface(figure, layer, maximum_points):
-    """Add a light WebGL sampling grid so Plotly can report click/box/lasso events."""
+
     rows, columns = layer.values.shape
     total = rows * columns
     stride = (
@@ -215,9 +215,7 @@ def _add_selection_overlays(figure, selections, show_labels=True):
         if geometry:
             coords = np.asarray(geometry["coordinates"], float)
             if geometry["kind"] == "profile":
-                profile_buffer(
-                    figure, coords, geometry.get("width", 0), color, label + " buffer"
-                )
+                profile_buffer(figure, coords, geometry.get("width", 0), color, label + " buffer")
             shape = geometry["kind"]
             if shape == "rectangle":
                 x0, x1, y0, y1 = coords
@@ -262,21 +260,11 @@ def _add_selection_overlays(figure, selections, show_labels=True):
                 )
             )
         elif {"row_index", "column_index"}.issubset(table.columns):
-            identities = [
-                c for c in ("sample_id", "mineral_id", "run_id") if c in table
-            ]
-            groups = (
-                table.groupby(identities, dropna=False)
-                if identities
-                else [("all", table)]
-            )
+            identities = [c for c in ("sample_id", "mineral_id", "run_id") if c in table]
+            groups = table.groupby(identities, dropna=False) if identities else [("all", table)]
             xs, ys = [], []
             for _, part in groups:
-                source = (
-                    str(part.source_layer_key.iloc[0])
-                    if "source_layer_key" in part
-                    else None
-                )
+                source = str(part.source_layer_key.iloc[0]) if "source_layer_key" in part else None
                 sizes = table.attrs.get("pixel_sizes", {})
                 if source is None and all(
                     c in part for c in ("sample_id", "mineral_id", "run_id", "channel")
@@ -292,9 +280,7 @@ def _add_selection_overlays(figure, selections, show_labels=True):
 
                 dx, dy = sizes.get(source, (step("x"), step("y")))
                 part = part.drop_duplicates(["row_index", "column_index"])
-                cells = set(
-                    zip(part.row_index.astype(int), part.column_index.astype(int))
-                )
+                cells = set(zip(part.row_index.astype(int), part.column_index.astype(int)))
                 for row in part.itertuples():
                     r, c = int(row.row_index), int(row.column_index)
                     x0, x1, y0, y1 = (
@@ -480,9 +466,7 @@ def wetherill_figure(frame, r68, r75, e68=None, e75=None, color=None):
         figure.add_trace(trace)
     if color:
         figure.update_layout(legend_title=color)
-    tick_ages = np.array(
-        [0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
-    )
+    tick_ages = np.array([0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500])
     tick_years = tick_ages * 1e6
     tx = np.expm1(1.55125e-10 * tick_years)
     ty = np.expm1(9.8485e-10 * tick_years)
