@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import streamlit as st
 from core.exports import render_chart
+from core.map_view import map_display_controls, map_downloads
 
-from core.io import safe_filename
 from core.state import initialize_state
 
 st.set_page_config(page_title="Maps", page_icon="🗺️", layout="wide")
@@ -25,12 +24,8 @@ if not finite.size:
 map_color = st.selectbox("Map color", ["Concentration", "Mineral", "Pixel domains"])
 from core.domain_maps import domain_controls, draw_domains
 
-show_domains = st.checkbox(
-    "Show saved domain overlays", value=False, key="maps_show_domains"
-)
-show_domain_labels = st.checkbox(
-    "Show domain labels", value=False, key="maps_domain_labels"
-)
+show_domains = st.checkbox("Show saved domain overlays", value=False, key="maps_show_domains")
+show_domain_labels = st.checkbox("Show domain labels", value=False, key="maps_domain_labels")
 saved_domains = {}
 domain_style, domain_opacity = "Filled pixels", 0.8
 if show_domains or map_color == "Pixel domains":
@@ -42,41 +37,7 @@ st.caption(
 )
 
 with st.expander("Map display controls", expanded=True):
-    st.subheader("Display")
-    log_color = st.checkbox("Log10 color scale (positive values only)")
-    color_values = finite[finite > 0] if log_color else finite
-    if not len(color_values):
-        st.info("This channel has no positive values for logarithmic colors.")
-        st.stop()
-    vmin = st.number_input(
-        "Color minimum",
-        value=float(np.percentile(color_values, 2)),
-        key=f"map_color_min::{channel}::{log_color}",
-    )
-    vmax = st.number_input(
-        "Color maximum",
-        value=float(np.percentile(color_values, 98)),
-        key=f"map_color_max::{channel}::{log_color}",
-    )
-    invert_x = st.checkbox("Invert X axis")
-    invert_y = st.checkbox("Invert Y axis")
-    colorscale = st.selectbox(
-        "Color scale",
-        ["Viridis", "Turbo", "Plasma", "Inferno", "Magma", "Cividis", "RdBu", "Jet"],
-    )
-    show_colorbar = st.checkbox("Show color bar", True)
-    scale_bar = st.number_input(
-        "Scale bar length (µm; 0 hides)", min_value=0.0, value=0.0
-    )
-    scale_color = st.color_picker("Scale bar color", "#ffffff")
-    scale_width = st.slider("Scale bar width", 1, 12, 5)
-    scale_position = st.selectbox(
-        "Scale bar position", ["Bottom left", "Bottom right", "Top left", "Top right"]
-    )
-    if vmin > vmax or (log_color and min(vmin, vmax) <= 0):
-        st.error("Color bounds must increase and be positive on a logarithmic scale.")
-        st.stop()
-    show_spokes = 0
+    display_options = map_display_controls(finite, channel, "core/maps_page.py")
 
 with st.container():
     selection_overlays = (
@@ -96,18 +57,7 @@ with st.container():
         "Concentration" if map_color == "Pixel domains" else map_color,
         mineral_palette(st.session_state),
         show_domain_labels=show_domain_labels,
-        invert_x=invert_x,
-        invert_y=invert_y,
-        vmin=vmin,
-        vmax=vmax,
-        radial_spokes=show_spokes,
-        colorscale=colorscale,
-        scale_bar_um=scale_bar,
-        show_colorbar=show_colorbar,
-        scale_bar_color=scale_color,
-        scale_bar_width=scale_width,
-        scale_bar_position=scale_position,
-        log_color=log_color,
+        **display_options,
     )
     if map_color == "Pixel domains":
         map_plot.data = ()
@@ -137,25 +87,4 @@ with st.container():
         show_labels=show_domain_labels,
     )
     render_chart(map_plot, width="stretch")
-    st.download_button(
-        "Save interactive map",
-        map_plot.to_html(include_plotlyjs=True),
-        f"{safe_filename(layer.key)}_map.html",
-        "text/html",
-    )
-    export_layer = layer
-    if len(visible) > 1:
-        export_key = st.selectbox(
-            "Dataset to export as matrix",
-            [l.key for l in visible],
-            format_func=lambda key: " | ".join(key.split("::")[:3]),
-        )
-        export_layer = st.session_state.layers[export_key]
-    st.download_button(
-        "Export displayed matrix",
-        pd.DataFrame(
-            export_layer.values, index=export_layer.y, columns=export_layer.x
-        ).to_csv(),
-        f"{safe_filename(export_layer.key)}_matrix.csv",
-        "text/csv",
-    )
+    map_downloads(map_plot, visible, "core/maps_page.py")
