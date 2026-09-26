@@ -28,9 +28,7 @@ def make_mask(values: np.ndarray, settings: GrainSettings) -> np.ndarray:
         "greater_than",
     }:
         raise ValueError("Unknown grain threshold rule.")
-    if settings.rule in {"less_than", "greater_than"} and not np.isfinite(
-        settings.threshold
-    ):
+    if settings.rule in {"less_than", "greater_than"} and not np.isfinite(settings.threshold):
         raise ValueError("Grain threshold must be finite.")
     if settings.rule == "finite":
         mask = np.isfinite(values)
@@ -43,12 +41,8 @@ def make_mask(values: np.ndarray, settings: GrainSettings) -> np.ndarray:
     if settings.fill_holes:
         mask = ndimage.binary_fill_holes(mask)
     if settings.bridge_pixels > 0:
-        structure = ndimage.generate_binary_structure(
-            2, 2 if settings.connectivity == 8 else 1
-        )
-        mask = ndimage.binary_closing(
-            mask, structure=structure, iterations=settings.bridge_pixels
-        )
+        structure = ndimage.generate_binary_structure(2, 2 if settings.connectivity == 8 else 1)
+        mask = ndimage.binary_closing(mask, structure=structure, iterations=settings.bridge_pixels)
     return np.asarray(mask, dtype=bool)
 
 
@@ -63,19 +57,13 @@ def detect_grains(layer: MapLayer, settings: GrainSettings) -> GrainResult:
     labels = np.where(keep[labels], labels, 0)
 
     if settings.exclude_edge_grains and labels.size:
-        edge_ids = np.unique(
-            np.concatenate((labels[0], labels[-1], labels[:, 0], labels[:, -1]))
-        )
+        edge_ids = np.unique(np.concatenate((labels[0], labels[-1], labels[:, 0], labels[:, -1])))
         if edge_ids.size:
             labels[np.isin(labels, edge_ids[edge_ids > 0])] = 0
 
     old_ids = np.unique(labels)
     old_ids = old_ids[old_ids > 0]
-    lookup = (
-        np.zeros(int(labels.max()) + 1, dtype=int)
-        if labels.max()
-        else np.zeros(1, dtype=int)
-    )
+    lookup = np.zeros(int(labels.max()) + 1, dtype=int) if labels.max() else np.zeros(1, dtype=int)
     lookup[old_ids] = np.arange(1, len(old_ids) + 1)
     labels = lookup[labels]
 
@@ -83,9 +71,7 @@ def detect_grains(layer: MapLayer, settings: GrainSettings) -> GrainResult:
     return GrainResult(layer.key, labels, shapes, pixels, asdict(settings))
 
 
-def measure_grains(
-    layer: MapLayer, labels: np.ndarray
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def measure_grains(layer: MapLayer, labels: np.ndarray) -> tuple[pd.DataFrame, pd.DataFrame]:
     dx, dy = layer.pixel_size
     pixel_area = dx * dy
     shape_rows = []
@@ -107,20 +93,15 @@ def measure_grains(
         )
         boundary = grain_mask & ~eroded
         br, bc = np.where(boundary)
-        fit_x, fit_y, length, width, angle = (
-            _feret_ellipse_long_axis_ellipse_from_points(
-                *layer.coordinates_at(br, bc), padding=1.04
-            )
+        fit_x, fit_y, length, width, angle = _feret_ellipse_long_axis_ellipse_from_points(
+            *layer.coordinates_at(br, bc), padding=1.04
         )
-        if (
-            not np.isfinite([fit_x, fit_y, length, width, angle]).all()
-            or min(length, width) <= 0
-        ):
+        if not np.isfinite([fit_x, fit_y, length, width, angle]).all() or min(length, width) <= 0:
             fit_x, fit_y = center_x, center_y
             bx = float(np.ptp(xv) + dx)
             by = float(np.ptp(yv) + dy)
             length, width, angle = max(bx, by), min(bx, by), 0.0 if bx >= by else 90.0
-        # Pixel-edge perimeter, exact for a rectilinear grid.
+
         perimeter = 0.0
         occupied = set(zip(rows.tolist(), cols.tolist()))
         for row, col in occupied:
@@ -129,11 +110,7 @@ def measure_grains(
             perimeter += dy * ((row, col - 1) not in occupied)
             perimeter += dy * ((row, col + 1) not in occupied)
         area = float(n * pixel_area)
-        roundness = (
-            float(np.clip(4 * np.pi * area / perimeter**2, 0, 1))
-            if perimeter
-            else np.nan
-        )
+        roundness = float(np.clip(4 * np.pi * area / perimeter**2, 0, 1)) if perimeter else np.nan
         finite_values = values[np.isfinite(values)]
 
         shape_rows.append(
@@ -160,27 +137,19 @@ def measure_grains(
                 "ellipse_method": "feret_boundary",
                 "grain_perimeter_um": perimeter,
                 "boundary_pixels": int(np.count_nonzero(boundary)),
-                "value_mean": (
-                    float(np.mean(finite_values)) if finite_values.size else np.nan
-                ),
+                "value_mean": (float(np.mean(finite_values)) if finite_values.size else np.nan),
                 "value_sd": (
-                    float(np.std(finite_values, ddof=1))
-                    if finite_values.size > 1
-                    else np.nan
+                    float(np.std(finite_values, ddof=1)) if finite_values.size > 1 else np.nan
                 ),
             }
         )
         if n >= 2:
-            covariance = np.cov(
-                np.column_stack((xv - center_x, yv - center_y)), rowvar=False
-            )
+            covariance = np.cov(np.column_stack((xv - center_x, yv - center_y)), rowvar=False)
             eigenvalues, eigenvectors = np.linalg.eigh(covariance)
             order = np.argsort(eigenvalues)[::-1]
             eigenvalues, eigenvectors = eigenvalues[order], eigenvectors[:, order]
             moment_major, moment_minor = 4 * np.sqrt(np.maximum(eigenvalues, 0))
-            moment_angle = float(
-                np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
-            )
+            moment_angle = float(np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])))
         else:
             moment_major = moment_minor = moment_angle = np.nan
         pcx, pcy, pmajor, pminor, pangle = _feret_ellipse_long_axis_ellipse_from_points(
@@ -212,9 +181,7 @@ def measure_grains(
             element_mean=record["value_mean"],
             element_sd=record["value_sd"],
             element_cv=(
-                record["value_sd"] / record["value_mean"]
-                if record["value_mean"]
-                else np.nan
+                record["value_sd"] / record["value_mean"] if record["value_mean"] else np.nan
             ),
         )
         pixel_parts.append(
