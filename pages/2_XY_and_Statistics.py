@@ -21,6 +21,7 @@ from core.io import numeric_columns
 from core.plots import xy_figure
 from core.state import initialize_state
 from core.ui_filters import persistent_selectbox
+from core.xy_link import ROW_ID, selection_key, selected_rows, linked_map_ui
 
 st.set_page_config(page_title="Plots and statistics", page_icon="📊", layout="wide")
 initialize_state()
@@ -45,8 +46,10 @@ st.caption(
     "Axis abbreviation k means ×1,000: 20k on a ppm axis is 20,000 ppm. Large extreme values expand the automatic range; logarithmic axes change spacing, not concentrations."
 )
 
-tab_xy, tab_kde, tab_corr, tab_pca = st.tabs(["X–Y", "KDE and K-S", "Correlation", "PCA"])
-with tab_xy:
+analysis = st.radio(
+    "Analysis", ["X–Y", "KDE and K-S", "Correlation", "PCA"], horizontal=True, key="xy_analysis"
+)
+if analysis == "X–Y":
     c1, c2, c3 = st.columns(3)
     x = persistent_selectbox("X", numbers, "xy_x", c1)
     y = persistent_selectbox("Y", numbers, "xy_y", c2, index=min(1, len(numbers) - 1))
@@ -65,7 +68,7 @@ with tab_xy:
     log_x = d2.checkbox("Log X")
     log_y = d3.checkbox("Log Y")
     trendline = d4.checkbox("Linear regression")
-    plot_frame = frame.copy()
+    plot_frame = frame.copy(deep=False)
     e1, e2, e3, e4 = st.columns(4)
     plot_type = e1.selectbox("Plot type", ["Scatter", "2D KDE density", "Scatter + KDE overlay"])
     grouped_fit = e2.checkbox("One regression per group", disabled=color == "None")
@@ -74,7 +77,6 @@ with tab_xy:
     iqr = st.checkbox("Filter X/Y outliers by IQR")
     if iqr:
         plot_frame = iqr_filter(plot_frame, [x, y])
-    from core.xy_link import ROW_ID, selection_key, selected_rows, linked_map_ui
 
     plot_frame[ROW_ID] = np.arange(len(plot_frame))
     if plot_type == "Scatter":
@@ -203,17 +205,37 @@ with tab_xy:
         linked_map_ui(selected_rows(plot_frame, event), st.session_state)
     else:
         render_chart(figure, width="stretch")
-    download_table(
-        "Download filtered X-Y data",
-        plot_frame.drop(columns=[ROW_ID]),
-        "xy_plot_data.csv",
-    )
+    if st.checkbox("Prepare filtered X-Y data download", key="xy_prepare_download"):
+        download_table(
+            "Download filtered X-Y data",
+            plot_frame.drop(columns=[ROW_ID]),
+            "xy_plot_data.csv",
+        )
 
-with tab_kde:
+if analysis == "KDE and K-S":
     value = persistent_selectbox("Variable", numbers, "kde_value")
     group_options = [c for c in frame.columns if frame[c].nunique(dropna=True) <= 100]
     group = persistent_selectbox("Groups", ["None"] + group_options, "kde_group")
-    kde_frame = frame.copy()
+    kde_columns = list(
+        dict.fromkeys(
+            [value]
+            + [
+                c
+                for c in (
+                    group,
+                    "grain_uid",
+                    "selection_id",
+                    "profile_id",
+                    "grain_id",
+                    "sample_id",
+                    "mineral_id",
+                    "run_id",
+                )
+                if c in frame
+            ]
+        )
+    )
+    kde_frame = frame[kde_columns].copy()
     log = st.checkbox("Log10 transform", key="kde_log")
     if log:
         st.caption(
@@ -278,7 +300,7 @@ with tab_kde:
         st.dataframe(comparisons, width="stretch", hide_index=True)
         download_table("Download K-S comparisons", comparisons, "ks_comparisons.csv")
 
-with tab_corr:
+if analysis == "Correlation":
     selected = st.multiselect(
         "Variables", numbers, default=numbers[: min(12, len(numbers))], key="corr_vars"
     )
@@ -305,7 +327,7 @@ with tab_corr:
             "text/csv",
         )
 
-with tab_pca:
+if analysis == "PCA":
     selected = st.multiselect(
         "Variables", numbers, default=numbers[: min(8, len(numbers))], key="pca_vars"
     )
@@ -403,13 +425,16 @@ with tab_pca:
         right.subheader("Explained variance")
         right.dataframe(variance.to_frame(), width="stretch")
 
-        st.download_button("Download PCA scores", scores.to_csv(), "pca_scores.csv", "text/csv")
-        st.download_button(
-            "Download PCA loadings", loadings.to_csv(), "pca_loadings.csv", "text/csv"
-        )
-        st.download_button(
-            "Download PCA variance", variance.to_csv(), "pca_variance.csv", "text/csv"
-        )
+        prepare_pca_downloads = st.checkbox("Prepare PCA downloads", key="pca_prepare_downloads")
+        if prepare_pca_downloads:
+            st.download_button("Download PCA scores", scores.to_csv(), "pca_scores.csv", "text/csv")
+            st.download_button(
+                "Download PCA loadings", loadings.to_csv(), "pca_loadings.csv", "text/csv"
+            )
+            st.download_button(
+                "Download PCA variance", variance.to_csv(), "pca_variance.csv", "text/csv"
+            )
+
         ranking = (
             loadings.mul(np.sqrt(variance.to_numpy()), axis=1)
             .pow(2)
@@ -438,9 +463,10 @@ with tab_pca:
             )
             biplot.update_layout(legend_title=None if color == "None" else color)
             render_chart(biplot, width="stretch")
-            st.download_button(
-                "Download PCA biplot",
-                biplot.to_html(include_plotlyjs=True),
-                "pca_biplot.html",
-                "text/html",
-            )
+            if prepare_pca_downloads:
+                st.download_button(
+                    "Download PCA biplot",
+                    biplot.to_html(include_plotlyjs=True),
+                    "pca_biplot.html",
+                    "text/html",
+                )
