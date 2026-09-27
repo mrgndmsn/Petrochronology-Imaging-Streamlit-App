@@ -8,7 +8,7 @@ from .geochronology import U238_U235, LAMBDA_238, LAMBDA_235
 def prepare_ratios(
     source, ratios, errors, factor=1.0, derive=True, rho=0.0, uranium_ratio=U238_U235
 ):
-    frame = source.copy()
+    frame = source.copy(deep=False)
     for code in ("68", "75", "76"):
         column, error = ratios.get(code), errors.get(code)
         frame["r" + code] = (
@@ -309,11 +309,15 @@ def scatter(frame, x, y, color, state, **kwargs):
 
     palette = None
     if color and not pd.api.types.is_numeric_dtype(frame[color]):
-        frame = frame.copy()
+        frame = frame.copy(deep=False)
         frame[color] = frame[color].fillna("(missing)").astype(str)
         palette = group_colors(frame[color], color, state, "Saved group colors", "Plotly")
+    columns = list(dict.fromkeys(c for c in (x, y, color) if c in frame))
+    for option in ("error_x", "error_y", "symbol", "size"):
+        if isinstance(kwargs.get(option), str) and kwargs[option] in frame:
+            columns.append(kwargs[option])
     return px.scatter(
-        frame,
+        frame[columns],
         x=x,
         y=y,
         color=color,
