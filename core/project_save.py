@@ -1,87 +1,200 @@
-from datetime import datetime
-import json
-import streamlit as st
+from core.page_memory import remembered_input as _remembered_input
+import numpy as np
+import pandas as pd
+
+DERIVED_PREFIXES = (
+    "Grain ",
+    "Selection |",
+    "Boundary ",
+    "Compared grain",
+    "Calculated map |",
+    "Line profile",
+)
 
 
-def capture_tab_settings(state):
-    values = {}
-    for key in list(state.get("_remembered_widget_keys", [])):
-        if key not in state or key.startswith("import"):
-            continue
-        value = state[key]
-        try:
-            json.dumps(value, allow_nan=False)
-        except (TypeError, ValueError):
-            continue
-        from .page_memory import portable_widget_key
-
-        values[portable_widget_key(key)] = value
-
-    for key in ("chart_category_colors", "linked_highlight_style"):
-        if key in state:
-            values[key] = state[key]
-    return values
+def combine_tables(parts):
+    parts = list(parts)
+    if len(parts) == 1:
+        return parts[0].reset_index(drop=True)
+    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
 
 
-def restore_tab_settings(state):
-    settings = state.pop("_restored_tab_settings", None)
-    if settings is None:
-        return
-    for key in list(state.get("_remembered_widget_keys", [])):
-        state.pop(key, None)
-    from .page_memory import portable_widget_key
-
-    settings = {portable_widget_key(k): v for k, v in settings.items()}
-    state["_remembered_widget_keys"] = [
-        k for k in settings if k not in ("chart_category_colors", "linked_highlight_style")
+def imported_observations(state):
+    tables = state.get("tables", {})
+    names = [
+        n
+        for n in tables
+        if n.startswith(("Raster channels |", "Point layer |", "Analysis table |"))
     ]
-    for key, value in settings.items():
-        state[key] = value
-    state.pop("prepared_project_download", None)
+    if not names:
+        names = [
+            n
+            for n in tables
+            if not tables[n].attrs.get("calculation_snapshot")
+            and not n.startswith(DERIVED_PREFIXES)
+            and "distance_along_profile_um" not in tables[n]
+            and "inside_phase" not in tables[n]
+        ]
+    parts = []
+    identities = set()
+    raster_identities = {
+        (l.sample_id, l.mineral_id, l.run_id) for l in state.get("layers", {}).values()
+    }
+    for name in names:
+        frame = tables[name]
+        if name.startswith("Raster channels |") and {
+            "sample_id",
+            "mineral_id",
+            "run_id",
+        }.issubset(frame):
 
-
-def project_save_ui():
-    from .project_io import save_project
-
-    st.caption(
-        "Save a snapshot whenever you want to keep your progress. Prepare a new snapshot after making changes, then download it."
-    )
-    if st.button("Prepare project download"):
-        st.session_state.pop("prepared_project_download", None)
-        try:
-            with st.spinner("Preparing project snapshot…"):
-                status = st.empty()
-                state = st.session_state
-                data = save_project(
-                    state.layers,
-                    state.tables,
-                    state.grain_results,
-                    state.selections,
-                    state.manual_grain_centers,
-                    state.point_layers,
-                    state.calculation_definitions,
-                    state.mineral_colors,
-                    capture_tab_settings(state),
-                    progress=status.caption,
-                )
-            st.session_state.prepared_project_download = (
-                data,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            mapped = pd.MultiIndex.from_frame(frame[["sample_id", "mineral_id", "run_id"]]).isin(
+                raster_identities
             )
-        except Exception as exc:
-            st.error(f"Project preparation failed: {exc}")
-    if "prepared_project_download" in st.session_state:
-        data, prepared_at = st.session_state.prepared_project_download
+            frame = frame.loc[~mapped]
+            if frame.empty:
+                continue
+        frame = frame.copy(deep=False)
+        frame["source_table"] = name
+        parts.append(frame)
+        if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
+            identities.update(
+                map(
+                    tuple,
+                    frame[["sample_id", "mineral_id", "run_id"]].drop_duplicates().to_numpy(),
+                )
+            )
+    for layer in state.get("point_layers", {}).values():
+        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
+        if identity in identities:
+            continue
+        frame = layer.frame.copy(deep=False)
+        for c, v in zip(("sample_id", "mineral_id", "run_id"), identity):
+            frame[c] = v
+        frame["source_table"] = layer.key
+        parts.append(frame)
+        identities.add(identity)
+    from .provenance import compatible_layers, all_channel_pixel_table
+
+    layers = state.get("layers", {})
+    for layer in layers.values():
+        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
+        if identity in identities:
+            continue
+        mask = np.zeros(layer.values.shape, bool)
+        for other in compatible_layers(layer, layers):
+            mask |= np.isfinite(other.values)
+        r, c = np.where(mask)
+        frame = all_channel_pixel_table(layer, r, c, layers)
+        frame["source_table"] = layer.key
+        parts.append(frame)
+        identities.add(identity)
+    return combine_tables(parts)
+
+
+def selection_means(state):
+
+    parts = []
+    identifiers = ["sample_id", "mineral_id", "run_id", "selection_id", "profile_id"]
+    excluded = {
+        "row_index",
+        "column_index",
+        "x",
+        "y",
+        "X",
+        "Y",
+        "x [um]",
+        "y [um]",
+        "grain_id",
+        "distance_along_profile_um",
+    }
+    for key, source in state.get("selections", {}).items():
+        if source.empty:
+            continue
+        frame = source.copy()
+        if "selection_id" not in frame:
+            frame["selection_id"] = key
+        groups = [c for c in identifiers if c in frame]
+        numeric = [
+            c
+            for c in frame.select_dtypes(include="number").columns
+            if c not in excluded and c not in groups
+        ]
+        frame[numeric] = frame[numeric].replace([np.inf, -np.inf], np.nan)
+        grouped = frame.groupby(groups, dropna=False, sort=False)
+        means = grouped[numeric].mean()
+        means["observation_count"] = grouped.size()
+        means = means.reset_index()
+        means["selection_key"] = key
+        parts.append(means)
+    return combine_tables(parts)
+
+
+def analysis_source_ui(state, key, label="Data source", tables=None):
+    import streamlit as st
+    from .ui_filters import filter_table_ui
+
+    if tables is not None:
+        all_label = "All matching tables"
+        names = [all_label] + list(tables)
+    else:
+        tables = state.get("tables", {})
+        all_label = "All imported observations"
+        names = [
+            all_label,
+            "All grain means",
+            "All grain pixels",
+            "All saved selections",
+            "All selection means (domains, spots and profiles)",
+        ] + list(tables)
+    name = _remembered_input(st.selectbox, label, list(dict.fromkeys(names)), key=key + "_source")
+    if name == all_label:
+        if all_label == "All imported observations":
+            frame = imported_observations(state)
+        else:
+            frame = combine_tables(tables.values())
+    elif name in ("All grain means", "All grain pixels"):
+        results = list(state.get("grain_results", {}).values())
+        channels = list(
+            dict.fromkeys(
+                state["layers"][r.layer_key].channel
+                for r in results
+                if r.layer_key in state.get("layers", {})
+            )
+        )
+        if channels:
+            channel = _remembered_input(
+                st.selectbox,
+                "Grain detection channel",
+                channels,
+                key=key + "_grain_channel",
+            )
+            results = [r for r in results if state["layers"][r.layer_key].channel == channel]
+        parts = [r.shape_table if name == "All grain means" else r.pixel_table for r in results]
+        frame = combine_tables(parts)
+    elif name == "All selection means (domains, spots and profiles)":
+        frame = selection_means(state)
         st.caption(
-            f"Snapshot prepared at {prepared_at} (server time). Later changes are not included until you prepare again."
+            "One arithmetic mean per saved selection and sample/mineral/run. Missing values are ignored per channel. Overlapping selections remain separate groups; observation_count reports contributing rows before channel-specific missing values."
         )
-        st.caption(
-            f"Prepared file: {len(data) / (1024 * 1024):.1f} MB. Click Download project snapshot, then check your browser Downloads. Preparing alone does not save a local copy."
+    elif name == "All saved selections":
+        parts = list(state.get("selections", {}).values())
+        frame = combine_tables(parts)
+        st.caption("Selections may overlap; their rows remain separate observations.")
+    else:
+        frame = tables[name]
+    if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
+        frame = frame.copy(deep=False)
+        frame["dataset_id"] = (
+            frame["sample_id"]
+            .fillna("(missing)")
+            .astype(str)
+            .str.cat(
+                [
+                    frame["mineral_id"].fillna("(missing)").astype(str),
+                    frame["run_id"].fillna("(missing)").astype(str),
+                ],
+                sep=" | ",
+            )
         )
-        st.download_button(
-            "Download project snapshot",
-            data,
-            "geochemical_project.gmap.zip",
-            "application/zip",
-            on_click="ignore",
-        )
+    return name, filter_table_ui(frame, name, key)
