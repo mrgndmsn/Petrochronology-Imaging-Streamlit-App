@@ -5,7 +5,7 @@ from .provenance import all_channel_pixel_table
 
 
 def raster_mineral_points(
-    layers, reference_keys, rule="finite", threshold=0.0, coordinates_only=False
+    layers, reference_keys, rule="finite", threshold=0.0, coordinates_only=False, channels=None
 ):
     out = {}
     identities = set()
@@ -25,7 +25,12 @@ def raster_mineral_points(
             x, y = layer.coordinates_at(rows, cols)
             frame = pd.DataFrame({"x": x, "y": y, "presence": layer.values[rows, cols]})
         else:
-            frame = all_channel_pixel_table(layer, rows, cols, layers)
+            projected = (
+                layers
+                if channels is None
+                else {k: v for k, v in layers.items() if v.channel in channels}
+            )
+            frame = all_channel_pixel_table(layer, rows, cols, projected)
         point = PointLayer(
             *identity,
             frame,
@@ -54,6 +59,26 @@ def mineral_layers_ui(state, key, coordinates_only=False):
         choices.append("Raster mineral maps")
     mode = _remembered_input(st.selectbox, "Mineral data source", choices, key=f"{key}_source")
     points = dict(state.point_layers) if mode != "Raster mineral maps" else {}
+    channels = None
+    if not coordinates_only:
+        from .data_sources import analysis_channels_ui, project_channels
+
+        channels, available = analysis_channels_ui(
+            state, key, [p.frame for p in points.values()], include_rasters=mode != "Point tables"
+        )
+        if channels is not None:
+            points = {
+                k: PointLayer(
+                    p.sample_id,
+                    p.mineral_id,
+                    p.run_id,
+                    project_channels(p.frame, channels + [p.x_column, p.y_column], available),
+                    p.x_column,
+                    p.y_column,
+                    p.metadata,
+                )
+                for k, p in points.items()
+            }
     if state.layers and mode != "Point tables":
         groups = {}
         for layer in state.layers.values():
@@ -101,6 +126,7 @@ def mineral_layers_ui(state, key, coordinates_only=False):
                 "finite" if rule == "Finite pixels" else "greater_than",
                 threshold,
                 coordinates_only=coordinates_only,
+                channels=channels,
             )
         )
     return {p.key: p for p in filter_layers_ui(points.values(), key + "_filters")}
