@@ -307,10 +307,20 @@ if analysis == "Radial profile":
     if core >= rim:
         st.error("The core cutoff must be smaller than the rim cutoff.")
         st.stop()
+    from core.data_sources import analysis_channels_ui
+
+    channels, _ = analysis_channels_ui(
+        st.session_state, "radial", include_rasters=True, preferred=[layer.channel]
+    )
+    analysis_layers = {
+        k: v
+        for k, v in st.session_state.layers.items()
+        if channels is None or v.channel in channels
+    }
     radial = ellipse_radial_table(
         layer,
         result,
-        st.session_state.layers,
+        analysis_layers,
         chosen,
         int(bins),
         core,
@@ -332,7 +342,7 @@ if analysis == "Radial profile":
     pixels, summary = spoke_profile_table(
         layer,
         result,
-        st.session_state.layers,
+        analysis_layers,
         chosen,
         int(spokes),
         buffer,
@@ -343,7 +353,16 @@ if analysis == "Radial profile":
         [
             col
             for col in pixels.columns
-            if col not in {"grain_id", "profile_number", "row_index", "column_index"}
+            if col
+            not in {
+                "sample_id",
+                "mineral_id",
+                "run_id",
+                "grain_id",
+                "profile_number",
+                "row_index",
+                "column_index",
+            }
             and pd.to_numeric(pixels[col], errors="coerce").notna().any()
         ]
         if not pixels.empty
@@ -370,9 +389,12 @@ if analysis == "Radial profile":
         from core.xy_link import ROW_ID, linked_plot_ui
 
         pixels = pixels.reset_index(drop=True)
+        pixels[channel] = pd.to_numeric(pixels[channel], errors="coerce")
         pixels[ROW_ID] = np.arange(len(pixels))
         radial_figure = px.scatter(
-            pixels,
+            pixels[
+                list(dict.fromkeys(["distance_normalized", channel, "comparison_group", ROW_ID]))
+            ],
             x="distance_normalized",
             y=channel,
             color="comparison_group",
@@ -391,7 +413,7 @@ if analysis == "Radial profile":
         linked_plot_ui(pixels, radial_event, st.session_state, key_prefix="radial")
         st.caption("Lasso or box-select profile pixels to highlight them on matching maps.")
 
-        grouped = pixels.copy()
+        grouped = pixels[["comparison_group", "distance_normalized", channel]].copy()
         grouped["distance_bin"] = pd.cut(
             grouped.distance_normalized,
             bins=np.linspace(0, 1, int(bins) + 1),
