@@ -120,10 +120,10 @@ def distance_zones(frame, column, bins=5, low=0.0, high=1.0):
 def prepare_ternary(frame, a, b, c):
     if len({a, b, c}) != 3:
         raise ValueError("Choose three distinct ternary axes.")
-    out = frame.copy()
+    out = frame.copy(deep=False)
     vals = out[[a, b, c]].apply(pd.to_numeric, errors="coerce")
     valid = np.isfinite(vals).all(axis=1) & (vals >= 0).all(axis=1) & (vals.sum(axis=1) > 0)
-    out = out.loc[valid].copy()
+    out = out.loc[valid]
     vals = vals.loc[valid]
     out["ternary_total"] = vals.sum(axis=1)
     for col in (a, b, c):
