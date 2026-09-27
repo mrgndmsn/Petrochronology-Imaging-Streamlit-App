@@ -134,7 +134,7 @@ def upb_input_ui(state):
             key="upb_uranium",
         )
     uranium_ratio = state["upb_uranium"]
-    _, source = analysis_source_ui(state, "unified_upb")
+    source_name, source = analysis_source_ui(state, "unified_upb", retain_group_pixels=True)
     if source.empty:
         st.info("No selected observations.")
         st.stop()
@@ -221,73 +221,76 @@ def upb_input_ui(state):
         )
         if w != "Assume zero":
             frame["rho_wetherill"] = pd.to_numeric(source[w], errors="coerce")
-    mode = remembered_input(
-        st.radio,
-        "Plot points as",
-        ["Individual rows", "Group means"],
-        key="upb_level",
-        horizontal=True,
+    domain_source = "selection_id" in frame and frame.selection_id.notna().any()
+    grain_source = source_name in ("All grain means", "All grain pixels")
+    grouped_source = domain_source or grain_source
+    summarized_source = source_name in (
+        "All grain means",
+        "All selection means (domains, spots and profiles)",
     )
-    basis = "Reported analytical errors"
-    if mode == "Group means":
-        ids = [
-            c
-            for c in (
-                "sample_id",
-                "mineral_id",
-                "run_id",
-                "grain_uid",
-                "grain_id",
-                "selection_id",
-                "profile_id",
+    if grouped_source:
+        mode = (
+            "Group means"
+            if summarized_source
+            else remembered_input(
+                st.radio,
+                "Display",
+                ["One point per domain or grain", "Individual pixels"],
+                key="upb_domain_display",
+                horizontal=True,
             )
-            if c in frame
-        ]
-        default = [c for c in ("sample_id", "mineral_id", "run_id", "selection_id") if c in ids]
-        groups = remembered_input(
-            st.multiselect, "Group means by", ids, default=default, key="upb_groups"
         )
-        basis = remembered_input(
-            st.radio,
-            "Group uncertainty",
-            ["SEM of mean (independent pixels)", "SD of pixels (dispersion only)"],
-            key="upb_basis",
-        )
-        product = derive and remembered_input(
-            st.radio,
-            "Grouped 207Pb/235U",
-            [
-                "Mean of calculated pixel ratios",
-                "Product of mean 207Pb/206Pb and mean 206Pb/238U",
-            ],
-            key="upb_product",
-        ).startswith("Product")
-        frame = spatial_means(
-            frame,
-            groups,
-            "SEM" if basis.startswith("SEM") else "SD",
-            product,
-            uranium_ratio,
-        )
-        st.caption(
-            "SEM = sample SD / √n; covariance uses the same paired pixels. SD describes variation, not precision of a date. Neither is an instrument-reported internal error. Repeated export cells at different coordinates cannot be identified automatically."
-        )
-        accepted = (
-            remembered_input(
-                st.checkbox,
-                "The grouped pixels are independent observations, not resampled duplicates",
-                key="upb_independent",
-            )
-            if basis.startswith("SEM")
-            else False
-        )
-        st.caption(
-            "Each plotted point represents one group. Choose All selected points below to fit or average those group points together; choose selection_id to analyse each domain separately."
-        )
-        with st.expander("Group means and uncertainties"):
-            st.dataframe(frame, hide_index=True)
+        mode = "Individual rows" if mode == "Individual pixels" else "Group means"
     else:
-        accepted = True
+        mode = remembered_input(
+            st.radio,
+            "Plot points as",
+            ["Individual rows", "Group means"],
+            key="upb_level",
+            horizontal=True,
+        )
+    basis = "Reported analytical errors"
+    accepted = True
+    if mode == "Group means":
+        identity = "grain_uid" if grain_source else "selection_id"
+        groups = [c for c in ("sample_id", "mineral_id", "run_id", identity) if c in frame]
+        if not grouped_source:
+            ids = [
+                c
+                for c in (
+                    "sample_id",
+                    "mineral_id",
+                    "run_id",
+                    "grain_uid",
+                    "grain_id",
+                    "selection_id",
+                    "profile_id",
+                )
+                if c in frame
+            ]
+            groups = remembered_input(
+                st.multiselect, "Group means by", ids, default=groups, key="upb_groups"
+            )
+        uncertainty = remembered_input(
+            st.radio,
+            "Domain ellipses",
+            ["Pixel spread (SD)", "Mean uncertainty (SEM; assumes independent pixels)"],
+            key="upb_domain_uncertainty",
+        )
+        accepted = uncertainty.startswith("Mean")
+        basis = "SEM of mean (independent pixels)" if accepted else "SD of pixels (dispersion only)"
+        frame = spatial_means(frame, groups, "SEM" if accepted else "SD", False, uranium_ratio)
+        st.caption(
+            "Each point is a domain or grain mean. Ellipse size and correlation come from its paired pixel ratios. SD shows spread; SEM assumes independent pixels and enables weighted fitting."
+        )
+        with st.expander("Domain statistics"):
+            st.dataframe(frame, hide_index=True)
+        if not frame.empty:
+            insufficient = int((frame.n < 2).sum())
+            if insufficient:
+                st.warning(
+                    f"{insufficient} groups have fewer than two valid paired pixels; their spread and correlation cannot be calculated."
+                )
     if frame.empty:
         st.info("No finite paired ratios in these groups.")
         st.stop()
