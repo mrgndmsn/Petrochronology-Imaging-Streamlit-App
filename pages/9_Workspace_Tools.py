@@ -1,200 +1,305 @@
-from core.page_memory import remembered_input as _remembered_input
-import numpy as np
-import pandas as pd
-
-DERIVED_PREFIXES = (
-    "Grain ",
-    "Selection |",
-    "Boundary ",
-    "Compared grain",
-    "Calculated map |",
-    "Line profile",
+from collections import deque
+import streamlit as st
+from core.state import initialize_state
+from core.workspace import (
+    calculated_layers,
+    exclusion_mask,
+    exclude_pixels,
+    rename_channel,
+    alias_channel,
+    calibrate_dataset,
+    invalidate_dataset_products,
+    rename_identity,
 )
+from core.provenance import compatible_layers
+from core.definitions import make_definition, register_definition, replay_definitions
+from core.project_io import UndoSnapshot, load_project
+
+st.set_page_config(page_title="Workspace tools", layout="wide")
+initialize_state()
+st.title("Workspace channel tools")
+from core.ui_filters import channel_layers_ui
+
+visible = channel_layers_ui(st.session_state, "workspace")
+reference = st.selectbox(
+    "Dataset to modify",
+    [l.key for l in visible],
+    format_func=lambda k: " | ".join(k.split("::")[:3]),
+)
+layer = st.session_state.layers[reference]
+st.caption(
+    "Filters list all matching datasets. Workspace operations below modify the explicitly selected dataset."
+)
+if not isinstance(st.session_state.workspace_history, deque):
+    st.session_state.workspace_history = deque(st.session_state.workspace_history, maxlen=10)
+history = st.session_state.workspace_history
+st.caption("Undo keeps the last 10 workspace operations for this session.")
 
 
-def combine_tables(parts):
-    parts = list(parts)
-    if len(parts) == 1:
-        return parts[0].reset_index(drop=True)
-    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
+def snapshot():
+    return UndoSnapshot(
+        {
+            key: st.session_state[key]
+            for key in (
+                "layers",
+                "tables",
+                "grain_results",
+                "selections",
+                "manual_grain_centers",
+                "point_layers",
+                "calculation_definitions",
+                "mineral_colors",
+            )
+        }
+    )
 
 
-def imported_observations(state):
-    tables = state.get("tables", {})
-    names = [
-        n
-        for n in tables
-        if n.startswith(("Raster channels |", "Point layer |", "Analysis table |"))
-    ]
-    if not names:
-        names = [
-            n
-            for n in tables
-            if not tables[n].attrs.get("calculation_snapshot")
-            and not n.startswith(DERIVED_PREFIXES)
-            and "distance_along_profile_um" not in tables[n]
-            and "inside_phase" not in tables[n]
-        ]
-    parts = []
-    identities = set()
-    raster_identities = {
-        (l.sample_id, l.mineral_id, l.run_id) for l in state.get("layers", {}).values()
+def invalidate_histories():
+    for key in list(st.session_state):
+        if key in {
+            "pca_output",
+            "pca_source",
+            "pca_pixel_source",
+            "active_map_highlight",
+        } or key.startswith("linked_plot_pixels::"):
+            st.session_state.pop(key, None)
+    st.session_state.grain_history = {}
+    st.session_state.table_history = {}
+    st.session_state.selection_history = []
+
+
+if st.button("Undo workspace operation", disabled=not history):
+    previous = history.pop()
+    restored = previous.load() if isinstance(previous, UndoSnapshot) else load_project(previous)
+    for key, value in restored.items():
+        st.session_state[key] = value
+    invalidate_histories()
+    st.rerun()
+analysis = st.radio(
+    "Analysis",
+    [
+        "Calculated maps",
+        "Pixel exclusions",
+        "Rename channel",
+        "Channel aliases",
+        "Pixel calibration",
+        "Dataset identities",
+    ],
+    horizontal=True,
+    key="analysis_9_Workspace_Tools",
+)
+if analysis == "Calculated maps":
+    st.write(
+        "Create a saved map channel using aligned channels in this sample/mineral/run. Use backticks around names with spaces."
+    )
+    name = st.text_input("Calculated map name")
+    equation = st.text_input("Map equation", placeholder="`U` / `Th`")
+    future = st.checkbox("Apply formula to all datasets and future imports")
+    if st.button("Create calculated map"):
+        try:
+            created = calculated_layers(st.session_state.layers, layer, name, equation)
+            snap = snapshot()
+            definition = make_definition(
+                "formula",
+                name,
+                "*" if future else (layer.sample_id, layer.mineral_id, layer.run_id),
+                expression=equation,
+            )
+            created.metadata["definition_id"] = definition["id"]
+            register_definition(st.session_state.calculation_definitions, definition)
+            st.session_state.layers[created.key] = created
+            st.session_state.tables[f"Calculated map | {created.key}"] = created.pixel_table()
+            replay_definitions(
+                st.session_state.layers,
+                st.session_state.tables,
+                st.session_state.calculation_definitions,
+            )
+            history.append(snap)
+            st.success(
+                f"Created {created.key}; available in maps, selections, and project exports."
+            )
+        except Exception as exc:
+            st.error(str(exc))
+if analysis == "Pixel exclusions":
+    exclusion_scope = st.selectbox(
+        "Pixel exclusion scope",
+        ["All aligned channels", "All aligned data channels", "Selected channel only"],
+    )
+    operator = st.selectbox(
+        "Exclude pixels where source is",
+        ["Less than", "Greater than", "Equal to", "Between", "Nonfinite"],
+    )
+    threshold = st.number_input("Exclusion threshold", value=0.0)
+    upper = st.number_input("Upper exclusion threshold", value=1.0)
+    st.caption(
+        "Applies to aligned channels within this sample/mineral/run. Existing grain results and affected summaries are invalidated; rerun grain detection."
+    )
+    try:
+        mask = exclusion_mask(layer.values, operator, threshold, upper)
+        st.write(f"{int(mask.sum())} pixels match.")
+        if st.button("Apply pixel exclusion", disabled=not mask.any()):
+            snap = snapshot()
+            exclude_pixels(
+                st.session_state.layers,
+                layer,
+                mask,
+                st.session_state.tables,
+                st.session_state.selections,
+                st.session_state.grain_results,
+                st.session_state.manual_grain_centers,
+                scope=exclusion_scope,
+            )
+            history.append(snap)
+            invalidate_histories()
+            st.success("Exclusion applied. Undo restores maps and derived tables.")
+    except ValueError as exc:
+        st.error(str(exc))
+if analysis == "Rename channel":
+    target = st.text_input("New channel name")
+    if st.button("Rename selected channel"):
+        snap = snapshot()
+        try:
+            renamed = rename_channel(
+                st.session_state.layers,
+                layer.key,
+                target,
+                st.session_state.tables,
+                st.session_state.selections,
+                st.session_state.grain_results,
+            )
+            history.append(snap)
+            invalidate_histories()
+            st.success(f"Renamed to {renamed}. Recompute grain summaries.")
+        except ValueError as exc:
+            st.error(str(exc))
+
+if analysis == "Channel aliases":
+    target = st.text_input("Alias target channel")
+    sources = st.multiselect(
+        "Alias source channels",
+        [l.channel for l in compatible_layers(layer, st.session_state.layers)],
+    )
+    rule = st.selectbox(
+        "Alias merge rule",
+        ["Target then source", "Source then target", "Mean of finite values"],
+    )
+    future_alias = st.checkbox("Apply alias to all datasets and future imports")
+    if st.button("Apply channel alias"):
+        try:
+            out = alias_channel(st.session_state.layers, layer, target, sources, rule)
+            snap = snapshot()
+            definition = make_definition(
+                "alias",
+                target,
+                ("*" if future_alias else (layer.sample_id, layer.mineral_id, layer.run_id)),
+                sources=sources,
+                rule=rule,
+            )
+            out.metadata["definition_id"] = definition["id"]
+            register_definition(st.session_state.calculation_definitions, definition)
+            st.session_state.layers[out.key] = out
+            invalidate_dataset_products(
+                layer,
+                st.session_state.tables,
+                st.session_state.selections,
+                st.session_state.grain_results,
+                st.session_state.manual_grain_centers,
+            )
+            history.append(snap)
+            invalidate_histories()
+            replay_definitions(
+                st.session_state.layers,
+                st.session_state.tables,
+                st.session_state.calculation_definitions,
+            )
+            st.success("Alias saved and replayed into eligible data.")
+        except ValueError as exc:
+            st.error(str(exc))
+if analysis == "Pixel calibration":
+    dx, dy = layer.pixel_size
+    dx = st.number_input("New X pixel size (µm)", min_value=1e-12, value=float(dx))
+    dy = st.number_input("New Y pixel size (µm)", min_value=1e-12, value=float(dy))
+    x0 = st.number_input("New X origin (µm)", value=float(layer.x[0]))
+    y0 = st.number_input("New Y origin (µm)", value=float(layer.y[0]))
+    st.caption(
+        "Recalibrates aligned map channels in this dataset. Derived grains, selections, and pixel tables are invalidated and must be recomputed. Undo restores them."
+    )
+    if st.button("Apply pixel calibration"):
+        try:
+            snap = snapshot()
+            calibrate_dataset(st.session_state.layers, layer, dx, dy, x0, y0)
+            invalidate_dataset_products(
+                layer,
+                st.session_state.tables,
+                st.session_state.selections,
+                st.session_state.grain_results,
+                st.session_state.manual_grain_centers,
+            )
+            history.append(snap)
+            invalidate_histories()
+            st.success("Calibration updated.")
+        except ValueError as exc:
+            st.error(str(exc))
+
+st.subheader("Saved calculation and alias rules")
+if st.session_state.calculation_definitions:
+    st.dataframe(st.session_state.calculation_definitions, width="stretch")
+    if st.button("Replay saved rules now"):
+        snap = snapshot()
+        status = replay_definitions(
+            st.session_state.layers,
+            st.session_state.tables,
+            st.session_state.calculation_definitions,
+        )
+        history.append(snap)
+        st.dataframe(status, width="stretch")
+    definition_labels = {
+        d["id"]: d["target"] + " (" + d["kind"] + ")"
+        for d in st.session_state.calculation_definitions
     }
-    for name in names:
-        frame = tables[name]
-        if name.startswith("Raster channels |") and {
-            "sample_id",
-            "mineral_id",
-            "run_id",
-        }.issubset(frame):
-
-            mapped = pd.MultiIndex.from_frame(frame[["sample_id", "mineral_id", "run_id"]]).isin(
-                raster_identities
-            )
-            frame = frame.loc[~mapped]
-            if frame.empty:
-                continue
-        frame = frame.copy(deep=False)
-        frame["source_table"] = name
-        parts.append(frame)
-        if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
-            identities.update(
-                map(
-                    tuple,
-                    frame[["sample_id", "mineral_id", "run_id"]].drop_duplicates().to_numpy(),
-                )
-            )
-    for layer in state.get("point_layers", {}).values():
-        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
-        if identity in identities:
-            continue
-        frame = layer.frame.copy(deep=False)
-        for c, v in zip(("sample_id", "mineral_id", "run_id"), identity):
-            frame[c] = v
-        frame["source_table"] = layer.key
-        parts.append(frame)
-        identities.add(identity)
-    from .provenance import compatible_layers, all_channel_pixel_table
-
-    layers = state.get("layers", {})
-    for layer in layers.values():
-        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
-        if identity in identities:
-            continue
-        mask = np.zeros(layer.values.shape, bool)
-        for other in compatible_layers(layer, layers):
-            mask |= np.isfinite(other.values)
-        r, c = np.where(mask)
-        frame = all_channel_pixel_table(layer, r, c, layers)
-        frame["source_table"] = layer.key
-        parts.append(frame)
-        identities.add(identity)
-    return combine_tables(parts)
-
-
-def selection_means(state):
-
-    parts = []
-    identifiers = ["sample_id", "mineral_id", "run_id", "selection_id", "profile_id"]
-    excluded = {
-        "row_index",
-        "column_index",
-        "x",
-        "y",
-        "X",
-        "Y",
-        "x [um]",
-        "y [um]",
-        "grain_id",
-        "distance_along_profile_um",
-    }
-    for key, source in state.get("selections", {}).items():
-        if source.empty:
-            continue
-        frame = source.copy()
-        if "selection_id" not in frame:
-            frame["selection_id"] = key
-        groups = [c for c in identifiers if c in frame]
-        numeric = [
-            c
-            for c in frame.select_dtypes(include="number").columns
-            if c not in excluded and c not in groups
+    remove = st.selectbox(
+        "Remove future replay rule",
+        list(definition_labels),
+        format_func=definition_labels.get,
+    )
+    if st.button("Remove replay rule (keep current values)"):
+        history.append(snapshot())
+        st.session_state.calculation_definitions = [
+            d for d in st.session_state.calculation_definitions if d["id"] != remove
         ]
-        frame[numeric] = frame[numeric].replace([np.inf, -np.inf], np.nan)
-        grouped = frame.groupby(groups, dropna=False, sort=False)
-        means = grouped[numeric].mean()
-        means["observation_count"] = grouped.size()
-        means = means.reset_index()
-        means["selection_key"] = key
-        parts.append(means)
-    return combine_tables(parts)
+        st.rerun()
 
-
-def analysis_source_ui(state, key, label="Data source", tables=None):
-    import streamlit as st
-    from .ui_filters import filter_table_ui
-
-    if tables is not None:
-        all_label = "All matching tables"
-        names = [all_label] + list(tables)
-    else:
-        tables = state.get("tables", {})
-        all_label = "All imported observations"
-        names = [
-            all_label,
-            "All grain means",
-            "All grain pixels",
-            "All saved selections",
-            "All selection means (domains, spots and profiles)",
-        ] + list(tables)
-    name = _remembered_input(st.selectbox, label, list(dict.fromkeys(names)), key=key + "_source")
-    if name == all_label:
-        if all_label == "All imported observations":
-            frame = imported_observations(state)
-        else:
-            frame = combine_tables(tables.values())
-    elif name in ("All grain means", "All grain pixels"):
-        results = list(state.get("grain_results", {}).values())
-        channels = list(
-            dict.fromkeys(
-                state["layers"][r.layer_key].channel
-                for r in results
-                if r.layer_key in state.get("layers", {})
+if analysis == "Dataset identities":
+    scope = st.selectbox("Rename scope", ["Dataset", "Sample", "Mineral"])
+    sample = st.text_input("New sample ID", value=layer.sample_id)
+    mineral = st.text_input("New mineral ID", value=layer.mineral_id)
+    run = st.text_input("New run ID", value=layer.run_id)
+    st.caption(
+        "Sample scope changes that sample across all its datasets. Mineral scope changes the mineral within the selected sample. Dataset scope changes this sample/mineral/run only. Collisions are rejected."
+    )
+    if st.button("Rename dataset identity"):
+        try:
+            fields = (
+                "layers",
+                "point_layers",
+                "tables",
+                "selections",
+                "grain_results",
+                "manual_grain_centers",
+                "calculation_definitions",
+                "active_table_name",
             )
-        )
-        if channels:
-            channel = _remembered_input(
-                st.selectbox,
-                "Grain detection channel",
-                channels,
-                key=key + "_grain_channel",
+            current = {k: st.session_state[k] for k in fields}
+            updated = rename_identity(
+                current,
+                (layer.sample_id, layer.mineral_id, layer.run_id),
+                (sample, mineral, run),
+                scope,
             )
-            results = [r for r in results if state["layers"][r.layer_key].channel == channel]
-        parts = [r.shape_table if name == "All grain means" else r.pixel_table for r in results]
-        frame = combine_tables(parts)
-    elif name == "All selection means (domains, spots and profiles)":
-        frame = selection_means(state)
-        st.caption(
-            "One arithmetic mean per saved selection and sample/mineral/run. Missing values are ignored per channel. Overlapping selections remain separate groups; observation_count reports contributing rows before channel-specific missing values."
-        )
-    elif name == "All saved selections":
-        parts = list(state.get("selections", {}).values())
-        frame = combine_tables(parts)
-        st.caption("Selections may overlap; their rows remain separate observations.")
-    else:
-        frame = tables[name]
-    if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
-        frame = frame.copy(deep=False)
-        frame["dataset_id"] = (
-            frame["sample_id"]
-            .fillna("(missing)")
-            .astype(str)
-            .str.cat(
-                [
-                    frame["mineral_id"].fillna("(missing)").astype(str),
-                    frame["run_id"].fillna("(missing)").astype(str),
-                ],
-                sep=" | ",
-            )
-        )
-    return name, filter_table_ui(frame, name, key)
+            history.append(snapshot())
+            for k, v in updated.items():
+                st.session_state[k] = v
+            invalidate_histories()
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
