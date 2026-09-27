@@ -27,7 +27,10 @@ editable = (
     and len(existing) == len(frame)
 )
 if not editable:
-    st.dataframe(frame, width="stretch", hide_index=True)
+    st.caption(
+        f"Preview: first {min(len(frame), 1000):,} of {len(frame):,} rows. Calculations use all filtered rows."
+    )
+    st.dataframe(frame.head(1000), width="stretch", hide_index=True)
     st.caption(
         "Calculate directly below. Your result will be saved in a separate calculation table; imported data stay unchanged. You can also create an editable copy first."
     )
@@ -146,7 +149,8 @@ if right.button("Delete selected column", disabled=delete == "None"):
     remember_column_change(history, st.session_state.tables[name], delete)
     st.session_state.tables[name] = frame.drop(columns=[delete])
     st.rerun()
-st.dataframe(st.session_state.tables[name], width="stretch")
+st.caption("Preview shows the first 1,000 rows; downloads include the complete table.")
+st.dataframe(st.session_state.tables[name].head(1000), width="stretch")
 download_table("Download table", st.session_state.tables[name], "calculated_table.csv")
 
 with st.expander("Custom plotting groups"):
