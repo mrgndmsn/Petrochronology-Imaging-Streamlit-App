@@ -138,7 +138,7 @@ def filtered_saved_selections(selections, layers):
                     if column in table:
                         current &= table[column].astype(str).eq(str(getattr(layer, column)))
                 mask |= current
-        subset = table.loc[mask].copy()
+        subset = table.copy(deep=False) if mask.all() else table.loc[mask]
         if not subset.empty:
             subset.attrs["pixel_sizes"] = {l.key: list(l.pixel_size) for l in layers}
             result[key] = subset
