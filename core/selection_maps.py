@@ -158,13 +158,17 @@ def map_overlay_figure(
 
     import plotly.graph_objects as go
 
-    finite = [l.values[np.isfinite(l.values)] for l in layers]
-    if display.get("log_color"):
-        finite = [v[v > 0] for v in finite]
-    finite = [v for v in finite if len(v)]
-    if finite:
-        display.setdefault("vmin", min(v.min() for v in finite))
-        display.setdefault("vmax", max(v.max() for v in finite))
+    if "vmin" not in display or "vmax" not in display:
+        bounds = []
+        for layer in layers:
+            valid = np.isfinite(layer.values)
+            if display.get("log_color"):
+                valid &= layer.values > 0
+            if valid.any():
+                bounds.append((layer.values[valid].min(), layer.values[valid].max()))
+        if bounds:
+            display.setdefault("vmin", min(low for low, high in bounds))
+            display.setdefault("vmax", max(high for low, high in bounds))
     backgrounds, decorations = [], []
     figure = None
     for index, layer in enumerate(layers):
