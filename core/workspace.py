@@ -82,10 +82,11 @@ def exclude_pixels(
             )
             if all(c in frame for c in ("row_index", "column_index")):
                 selected = np.array(
-                    [(r, c) in rejected for r, c in zip(frame.row_index, frame.column_index)]
+                    [(r, c) in rejected for r, c in zip(frame.row_index, frame.column_index)],
+                    dtype=bool,
                 )
             elif all(c in frame for c in ("x", "y")):
-                selected = np.array([(x, y) in xy for x, y in zip(frame.x, frame.y)])
+                selected = np.array([(x, y) in xy for x, y in zip(frame.x, frame.y)], dtype=bool)
             else:
 
                 selected = np.full(
@@ -360,6 +361,8 @@ def store_grain_result(state, reference, updated):
             del state.manual_grain_centers[center_key]
     for collection in (state.tables, state.selections):
         for name, frame in list(collection.items()):
+            if name in (f"Grain means | {key}", f"Grain pixels | {key}"):
+                continue
             if not all(c in frame for c in ids):
                 continue
             same = np.logical_and.reduce(
