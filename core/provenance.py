@@ -81,28 +81,25 @@ def grain_pixels_all_channels(reference: MapLayer, result: GrainResult, layers) 
 
 
 def grain_summary_all_channels(reference: MapLayer, result: GrainResult, layers) -> pd.DataFrame:
-    pixels = grain_pixels_all_channels(reference, result, layers)
+    rows, columns = np.where(result.labels > 0)
+    grain_ids = result.labels[rows, columns]
     summary = result.shape_table.copy()
     summary["grain_layer_key"] = reference.key
+    occupied = {"sample_id", "mineral_id", "run_id", "x", "y", "row_index", "column_index"}
     metadata = set(IDENTIFIER_COLUMNS + ["x", "y", "row_index", "column_index"])
-    channels = [
-        c
-        for c in pixels.columns
-        if c not in metadata and pd.to_numeric(pixels[c], errors="coerce").notna().any()
-    ]
-    for channel in channels:
-        values = pd.to_numeric(pixels[channel], errors="coerce")
-        stats = (
-            pixels.assign(_value=values)
-            .groupby("grain_id")
-            ._value.agg(["mean", "std", "median", "count"])
-        )
-        stats.columns = [
-            f"{channel}_mean",
-            f"{channel}_sd",
-            f"{channel}_median",
-            f"{channel}_n",
-        ]
+    for layer in compatible_layers(reference, layers):
+        channel = layer.channel
+        if channel in occupied:
+            channel = f"{layer.mineral_id} | {channel}"
+        occupied.add(channel)
+        if channel in metadata:
+            continue
+        values = layer.values[rows, columns]
+        if not pd.notna(values).any():
+            continue
+        stats = pd.Series(values).groupby(grain_ids).agg(["mean", "std", "median", "count"])
+        stats.index.name = "grain_id"
+        stats.columns = [f"{channel}_{suffix}" for suffix in ("mean", "sd", "median", "n")]
         summary = summary.merge(stats.reset_index(), on="grain_id", how="left")
     return summary
 
