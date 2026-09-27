@@ -46,7 +46,8 @@ def map_display_controls(values, channel, page):
         st.info("This channel has no positive values for logarithmic colors.")
         st.stop()
     bounds = {}
-    for name, percentile in (("min", 2), ("max", 98)):
+    limits = np.percentile(color_values, [2, 98])
+    for name, limit in zip(("min", "max"), limits):
         label = "Color minimum" if name == "min" else "Color maximum"
         key = f"input::{page}::{label}::0"
         if page == "core/maps_page.py":
@@ -54,7 +55,7 @@ def map_display_controls(values, channel, page):
         bounds["v" + name] = control(
             st.number_input,
             label,
-            value=float(np.percentile(color_values, percentile)),
+            value=float(limit),
             key=key,
         )
     if bounds["vmin"] > bounds["vmax"] or (log_color and min(bounds.values()) <= 0):
@@ -100,9 +101,10 @@ def map_downloads(figure, layers, page):
     layer = layers[0]
     st.download_button(
         "Save interactive map",
-        figure.to_html(include_plotlyjs=True),
+        lambda: figure.to_html(include_plotlyjs=True),
         f"{safe_filename(layer.key)}_map.html",
         "text/html",
+        on_click="ignore",
     )
     if len(layers) > 1:
         key = remembered_input(
@@ -115,7 +117,8 @@ def map_downloads(figure, layers, page):
         layer = next(item for item in layers if item.key == key)
     st.download_button(
         "Export displayed matrix",
-        pd.DataFrame(layer.values, index=layer.y, columns=layer.x).to_csv(),
+        lambda: pd.DataFrame(layer.values, index=layer.y, columns=layer.x).to_csv(),
         f"{safe_filename(layer.key)}_matrix.csv",
         "text/csv",
+        on_click="ignore",
     )
