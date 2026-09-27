@@ -1,433 +1,200 @@
-from __future__ import annotations
-from core.exports import download_table
+from core.page_memory import remembered_input as _remembered_input
 import numpy as np
 import pandas as pd
 
-import copy
-import plotly.express as px
-import streamlit as st
-from core.exports import render_chart
-
-from core.grains import measure_grains
-from core.models import GrainResult
-from core.plots import map_figure
-from core.provenance import (
-    ellipse_radial_table,
-    grain_pixels_all_channels,
-    grain_summary_all_channels,
-    intensity_core_rim_labels,
-    spoke_profile_table,
-)
-from core.selections import merge_grains, split_crossed_grains
-from core.state import initialize_state
-
-st.set_page_config(page_title="Grain editing", page_icon="✂️", layout="wide")
-initialize_state()
-st.title("Manual grain editing and radial profiles")
-if not st.session_state.grain_results:
-    st.info("Choose Detect grains above to create a grain set first.")
-    st.stop()
-from core.ui_filters import channel_layers_ui
-from core.selection_maps import map_overlay_figure, filtered_saved_selections
-from core.mineral_colors import mineral_palette
-
-visible = channel_layers_ui(st.session_state, "edit", grain_results_only=True)
-map_color = st.selectbox("Map color", ["Concentration", "Mineral"])
-key = st.selectbox(
-    "Grain set to edit",
-    [l.key for l in visible],
-    format_func=lambda k: " | ".join(k.split("::")[:3]),
-)
-st.caption(
-    "All filtered maps are overlaid. Split, merge, and center edits affect the selected grain set only."
+DERIVED_PREFIXES = (
+    "Grain ",
+    "Selection |",
+    "Boundary ",
+    "Compared grain",
+    "Calculated map |",
+    "Line profile",
 )
 
 
-def editing_map():
-    return map_overlay_figure(
-        visible,
-        st.session_state.grain_results,
-        st.session_state.manual_grain_centers,
-        filtered_saved_selections(st.session_state.selections, visible),
-        map_color,
-        mineral_palette(st.session_state),
-        selectable=True,
-    )
+def combine_tables(parts):
+    parts = list(parts)
+    if len(parts) == 1:
+        return parts[0].reset_index(drop=True)
+    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
 
 
-result = st.session_state.grain_results[key]
-layer = st.session_state.layers[result.layer_key]
-ids = result.shape_table["grain_id"].astype(int).tolist() if not result.shape_table.empty else []
-if not ids:
-    st.info("This set has no grains.")
-    st.stop()
-
-
-def replace_labels(labels):
-    st.session_state.grain_history.setdefault(key, []).append(
-        (
-            copy.deepcopy(st.session_state.grain_results[key]),
-            copy.deepcopy(st.session_state.tables),
-            copy.deepcopy(st.session_state.selections),
-            copy.deepcopy(st.session_state.manual_grain_centers),
-        )
-    )
-    shapes, pixels = measure_grains(layer, labels)
-    updated = GrainResult(result.layer_key, labels, shapes, pixels, result.settings)
-    updated.pixel_table = grain_pixels_all_channels(layer, updated, st.session_state.layers)
-    updated.shape_table = grain_summary_all_channels(layer, updated, st.session_state.layers)
-    from core.workspace import store_grain_result
-
-    store_grain_result(st.session_state, layer, updated)
-
-
-def clicked_xy(event):
-    selection = getattr(event, "selection", None)
-    points = selection.get("points", []) if selection is not None else []
-    if not points:
-        return None
-    point = dict(points[-1])
-    return float(point["x"]), float(point["y"])
-
-
-tab_split, tab_merge, tab_center, tab_radial = st.tabs(
-    ["Split", "Merge", "Move center", "Radial profile"]
-)
-history = st.session_state.grain_history.setdefault(key, [])
-if st.button("Undo last split or merge", disabled=not history):
-    restored, old_tables, old_selections, old_centers = history.pop()
-    st.session_state.tables = old_tables
-    st.session_state.selections = old_selections
-    st.session_state.manual_grain_centers = old_centers
-    st.session_state.grain_results[key] = restored
-    st.session_state.tables[
-        f"Grain means | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-    ] = restored.shape_table
-    st.session_state.tables[
-        f"Grain pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-    ] = restored.pixel_table
-    st.rerun()
-with tab_split:
-    draft_key = f"split_points::{key}"
-    st.session_state.setdefault(draft_key, [])
-    split_figure = editing_map()
-    endpoints = st.session_state[draft_key]
-    if endpoints:
-        split_figure.add_scattergl(
-            x=[p[0] for p in endpoints],
-            y=[p[1] for p in endpoints],
-            mode="lines+markers",
-            line=dict(color="red", width=3, dash="solid"),
-            marker=dict(color="red", size=10),
-            name="Split line",
-        )
-    st.caption(
-        "Click two locations on the map to define the red split line, then Apply split. A third click starts a new line."
-    )
-    event = render_chart(
-        split_figure,
-        width="stretch",
-        key=f"split_map::{key}",
-        on_select="rerun",
-        selection_mode=("points",),
-    )
-    draft_key = f"split_points::{key}"
-    st.session_state.setdefault(draft_key, [])
-    clicked = clicked_xy(event)
-    event_id = getattr(event, "event_id", None)
-    if (
-        clicked is not None
-        and event_id is not None
-        and st.session_state.get(draft_key + "_event") != event_id
-    ):
-        st.session_state[draft_key + "_event"] = event_id
-        if len(st.session_state[draft_key]) >= 2:
-            st.session_state[draft_key] = []
-        st.session_state[draft_key].append(clicked)
-        st.session_state[draft_key + "_use"] = len(st.session_state[draft_key]) == 2
-        st.rerun()
-    add, undo, clear = st.columns(3)
-    if add.button("Add clicked endpoint", disabled=clicked is None):
-        if len(st.session_state[draft_key]) >= 2:
-            st.session_state[draft_key] = []
-        st.session_state[draft_key].append(clicked)
-        st.rerun()
-    if undo.button("Undo endpoint", disabled=not st.session_state[draft_key]):
-        st.session_state[draft_key].pop()
-        st.rerun()
-    if clear.button("Clear endpoints", disabled=not st.session_state[draft_key]):
-        st.session_state[draft_key] = []
-        st.rerun()
-    st.caption(
-        "Clicked split line: "
-        + " → ".join(f"({x:.4g}, {y:.4g})" for x, y in st.session_state[draft_key])
-    )
-    st.write("You can also type exact pixel column,row indices below.")
-    c = st.columns(5)
-    c0 = c[0].number_input("Start column", value=0.0)
-    r0 = c[1].number_input("Start row", value=0.0)
-    c1 = c[2].number_input("End column", value=float(result.labels.shape[1] - 1))
-    r1 = c[3].number_input("End row", value=float(result.labels.shape[0] - 1))
-    width = c[4].number_input("Width (pixels)", 1.0, 20.0, 1.0)
-    st.session_state.setdefault(draft_key + "_use", len(st.session_state[draft_key]) == 2)
-    use_clicked = st.checkbox(
-        "Use clicked endpoints",
-        key=draft_key + "_use",
-        disabled=len(st.session_state[draft_key]) != 2,
-    )
-    st.caption(
-        "Apply splits every grain crossed by this line; no grain number is required. Extend the line beyond both edges of the grain."
-    )
-    if st.button("Apply split", type="primary"):
-        try:
-            if use_clicked:
-                (x0, y0), (x1, y1) = st.session_state[draft_key]
-                c0, r0 = layer.fractional_indices(x0, y0)
-                c1, r1 = layer.fractional_indices(x1, y1)
-            new_labels = split_crossed_grains(
-                result.labels,
-                (c0, r0),
-                (c1, r1),
-                width,
-                int(result.settings.get("connectivity", 8)),
-                int(result.settings.get("minimum_pixels", 1)),
-            )
-            replace_labels(new_labels)
-            st.success("Grain split.")
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-with tab_merge:
-    chosen = st.multiselect("Grain IDs to merge", ids)
-    if st.button("Merge selected grains"):
-        try:
-            replace_labels(merge_grains(result.labels, chosen))
-            st.success("Grains merged.")
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-    render_chart(editing_map(), width="stretch", key=f"merge_result_map::{key}")
-with tab_center:
-    gid = st.selectbox("Grain ID", ids, key="center_gid")
-    row = result.shape_table.loc[result.shape_table.grain_id == gid].iloc[0]
-    center_key = f"{key}::{gid}"
-    pending_key = "pending_center::" + center_key
-    center_figure = editing_map()
-    pending = st.session_state.get(pending_key)
-    if pending is not None:
-        center_figure.add_scattergl(
-            x=[pending[0]],
-            y=[pending[1]],
-            mode="markers+text",
-            text=[f"Proposed center {gid}"],
-            textposition="top center",
-            marker=dict(color="#ff3333", size=14, symbol="cross"),
-            textfont=dict(color="#ff3333"),
-            name="Proposed center",
-        )
-    center_event = render_chart(
-        center_figure,
-        width="stretch",
-        key=f"center_map::{key}::{gid}",
-        on_select="rerun",
-        selection_mode=("points",),
-    )
-    clicked = clicked_xy(center_event)
-    center_event_id = getattr(center_event, "event_id", None)
-    if (
-        clicked is not None
-        and center_event_id is not None
-        and st.session_state.get(pending_key + "_event") != center_event_id
-    ):
-        st.session_state[pending_key + "_event"] = center_event_id
-        st.session_state[pending_key] = clicked
-        st.rerun()
-    clicked = st.session_state.get(pending_key, clicked)
-    if clicked is not None:
-        st.caption(
-            f"Selected center: X={clicked[0]:.4g}, Y={clicked[1]:.4g} µm. Click Save moved center to apply."
-        )
-    center_mode = st.radio("Center input", ["Map click", "Typed coordinates"], horizontal=True)
-    c = st.columns(2)
-    saved_center = st.session_state.manual_grain_centers.get(
-        center_key, [float(row.ellipse_center_x_um), float(row.ellipse_center_y_um)]
-    )
-    cx = c[0].number_input("Center X (µm)", value=saved_center[0], key=center_key + "_typed_x")
-    cy = c[1].number_input("Center Y (µm)", value=saved_center[1], key=center_key + "_typed_y")
-    center_key = f"{key}::{gid}"
-    if st.button(
-        "Save moved center",
-        type="primary",
-        disabled=center_mode == "Map click" and clicked is None,
-    ):
-        chosen_center = clicked if center_mode == "Map click" and clicked is not None else (cx, cy)
-        st.session_state.manual_grain_centers[center_key] = list(chosen_center)
-        st.session_state.pop(pending_key, None)
-        st.rerun()
-    if center_key in st.session_state.manual_grain_centers:
-        st.write("Saved center:", st.session_state.manual_grain_centers[center_key])
-        if st.button("Reset this center"):
-            del st.session_state.manual_grain_centers[center_key]
-            st.rerun()
-with tab_radial:
-    chosen = st.multiselect("Grain IDs", ids, default=ids[:1], key="radial_gids")
-    c = st.columns(5)
-    bins = c[0].number_input("Core-to-rim bins", 2, 100, 25)
-    core = c[1].number_input("Core cutoff", 0.0, 1.0, 0.33)
-    rim = c[2].number_input("Rim cutoff", 0.0, 1.0, 0.67)
-    spokes = c[3].number_input("Profiles per grain", 1, 180, 8)
-    buffer = c[4].number_input("Spoke buffer (pixels)", 0.0, 20.0, 1.0)
-    centers = {gid: st.session_state.manual_grain_centers.get(f"{key}::{gid}") for gid in chosen}
-    st.caption(
-        "Numbered spokes use the fitted ellipse and any saved moved center. Their count matches Profiles per grain; the buffer controls which pixels contribute to each profile."
-    )
-    spoke_map = map_figure(
-        layer,
-        labels=result.labels,
-        grain_shapes=result.shape_table[result.shape_table.grain_id.isin(chosen)],
-        manual_centers={gid: center for gid, center in centers.items() if center is not None},
-        radial_spokes=int(spokes),
-    )
-    render_chart(spoke_map, width="stretch", key=f"radial_spoke_map::{key}")
-    full_ellipse = st.checkbox("Include all pixels inside fitted ellipse", True)
-    if not chosen:
-        st.info("Select one or more grains to calculate radial profiles.")
-        st.stop()
-    if core >= rim:
-        st.error("The core cutoff must be smaller than the rim cutoff.")
-        st.stop()
-    radial = ellipse_radial_table(
-        layer,
-        result,
-        st.session_state.layers,
-        chosen,
-        int(bins),
-        core,
-        rim,
-        centers,
-        use_full_ellipse=full_ellipse,
-    )
-    use_intensity = st.checkbox("Use an element map to help label core and rim")
-    radial_channels = [
-        c for c in radial.columns if pd.to_numeric(radial[c], errors="coerce").notna().any()
+def imported_observations(state):
+    tables = state.get("tables", {})
+    names = [
+        n
+        for n in tables
+        if n.startswith(("Raster channels |", "Point layer |", "Analysis table |"))
     ]
-    if use_intensity and radial_channels:
-        ic = st.columns(4)
-        intensity = ic[0].selectbox("Core/rim element", radial_channels)
-        low = ic[1].number_input("Core quantile", 0.0, 1.0, 0.3)
-        high = ic[2].number_input("Rim quantile", 0.0, 1.0, 0.7)
-        high_rim = ic[3].checkbox("High value means rim", True)
-        radial = intensity_core_rim_labels(radial, intensity, low, high, high_rim)
-    pixels, summary = spoke_profile_table(
-        layer,
-        result,
-        st.session_state.layers,
-        chosen,
-        int(spokes),
-        buffer,
-        int(bins),
-        centers,
-    )
-    channel_choices = (
-        [
-            col
-            for col in pixels.columns
-            if col not in {"grain_id", "profile_number", "row_index", "column_index"}
-            and pd.to_numeric(pixels[col], errors="coerce").notna().any()
+    if not names:
+        names = [
+            n
+            for n in tables
+            if not tables[n].attrs.get("calculation_snapshot")
+            and not n.startswith(DERIVED_PREFIXES)
+            and "distance_along_profile_um" not in tables[n]
+            and "inside_phase" not in tables[n]
         ]
-        if not pixels.empty
-        else []
-    )
-    if channel_choices:
-        from core.radial_groups import apply_groups
+    parts = []
+    identities = set()
+    raster_identities = {
+        (l.sample_id, l.mineral_id, l.run_id) for l in state.get("layers", {}).values()
+    }
+    for name in names:
+        frame = tables[name]
+        if name.startswith("Raster channels |") and {
+            "sample_id",
+            "mineral_id",
+            "run_id",
+        }.issubset(frame):
 
-        st.caption(
-            "Group numbers using one line per group, for example Left = 1,2,3. Unlisted grains/profiles remain separate."
-        )
-        grain_groups = st.text_area("Grain groups", key="radial_grain_groups::" + key)
-        profile_groups = st.text_area("Profile number groups", key="radial_profile_groups::" + key)
-        try:
-            pixels = apply_groups(pixels, grain_groups, profile_groups)
-        except ValueError as exc:
-            st.error(str(exc))
-            pixels = apply_groups(pixels, "", "")
-        channel = st.selectbox(
-            "Profile value",
-            channel_choices,
-            index=(channel_choices.index(layer.channel) if layer.channel in channel_choices else 0),
-        )
-        from core.xy_link import ROW_ID, linked_plot_ui
-
-        pixels = pixels.reset_index(drop=True)
-        pixels[ROW_ID] = np.arange(len(pixels))
-        radial_figure = px.scatter(
-            pixels,
-            x="distance_normalized",
-            y=channel,
-            color="comparison_group",
-            custom_data=[ROW_ID],
-            opacity=0.35,
-            template="plotly_white",
-        )
-        radial_figure.update_layout(dragmode="lasso")
-        radial_event = render_chart(
-            radial_figure,
-            width="stretch",
-            key="radial_pixel_selection",
-            on_select="rerun",
-            selection_mode=("points", "box", "lasso"),
-        )
-        linked_plot_ui(pixels, radial_event, st.session_state, key_prefix="radial")
-        st.caption("Lasso or box-select profile pixels to highlight them on matching maps.")
-
-        grouped = pixels.copy()
-        grouped["distance_bin"] = pd.cut(
-            grouped.distance_normalized,
-            bins=np.linspace(0, 1, int(bins) + 1),
-            include_lowest=True,
-            labels=False,
-        )
-        grouped = (
-            grouped.groupby(["comparison_group", "distance_bin"], observed=True)
-            .agg(
-                distance=("distance_normalized", "mean"),
-                mean=(channel, "mean"),
-                sd=(channel, "std"),
-                n=(channel, "count"),
+            mapped = pd.MultiIndex.from_frame(frame[["sample_id", "mineral_id", "run_id"]]).isin(
+                raster_identities
             )
-            .reset_index()
+            frame = frame.loc[~mapped]
+            if frame.empty:
+                continue
+        frame = frame.copy(deep=False)
+        frame["source_table"] = name
+        parts.append(frame)
+        if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
+            identities.update(
+                map(
+                    tuple,
+                    frame[["sample_id", "mineral_id", "run_id"]].drop_duplicates().to_numpy(),
+                )
+            )
+    for layer in state.get("point_layers", {}).values():
+        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
+        if identity in identities:
+            continue
+        frame = layer.frame.copy(deep=False)
+        for c, v in zip(("sample_id", "mineral_id", "run_id"), identity):
+            frame[c] = v
+        frame["source_table"] = layer.key
+        parts.append(frame)
+        identities.add(identity)
+    from .provenance import compatible_layers, all_channel_pixel_table
+
+    layers = state.get("layers", {})
+    for layer in layers.values():
+        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
+        if identity in identities:
+            continue
+        mask = np.zeros(layer.values.shape, bool)
+        for other in compatible_layers(layer, layers):
+            mask |= np.isfinite(other.values)
+        r, c = np.where(mask)
+        frame = all_channel_pixel_table(layer, r, c, layers)
+        frame["source_table"] = layer.key
+        parts.append(frame)
+        identities.add(identity)
+    return combine_tables(parts)
+
+
+def selection_means(state):
+
+    parts = []
+    identifiers = ["sample_id", "mineral_id", "run_id", "selection_id", "profile_id"]
+    excluded = {
+        "row_index",
+        "column_index",
+        "x",
+        "y",
+        "X",
+        "Y",
+        "x [um]",
+        "y [um]",
+        "grain_id",
+        "distance_along_profile_um",
+    }
+    for key, source in state.get("selections", {}).items():
+        if source.empty:
+            continue
+        frame = source.copy()
+        if "selection_id" not in frame:
+            frame["selection_id"] = key
+        groups = [c for c in identifiers if c in frame]
+        numeric = [
+            c
+            for c in frame.select_dtypes(include="number").columns
+            if c not in excluded and c not in groups
+        ]
+        frame[numeric] = frame[numeric].replace([np.inf, -np.inf], np.nan)
+        grouped = frame.groupby(groups, dropna=False, sort=False)
+        means = grouped[numeric].mean()
+        means["observation_count"] = grouped.size()
+        means = means.reset_index()
+        means["selection_key"] = key
+        parts.append(means)
+    return combine_tables(parts)
+
+
+def analysis_source_ui(state, key, label="Data source", tables=None):
+    import streamlit as st
+    from .ui_filters import filter_table_ui
+
+    if tables is not None:
+        all_label = "All matching tables"
+        names = [all_label] + list(tables)
+    else:
+        tables = state.get("tables", {})
+        all_label = "All imported observations"
+        names = [
+            all_label,
+            "All grain means",
+            "All grain pixels",
+            "All saved selections",
+            "All selection means (domains, spots and profiles)",
+        ] + list(tables)
+    name = _remembered_input(st.selectbox, label, list(dict.fromkeys(names)), key=key + "_source")
+    if name == all_label:
+        if all_label == "All imported observations":
+            frame = imported_observations(state)
+        else:
+            frame = combine_tables(tables.values())
+    elif name in ("All grain means", "All grain pixels"):
+        results = list(state.get("grain_results", {}).values())
+        channels = list(
+            dict.fromkeys(
+                state["layers"][r.layer_key].channel
+                for r in results
+                if r.layer_key in state.get("layers", {})
+            )
         )
-        render_chart(
-            px.line(
-                grouped,
-                x="distance",
-                y="mean",
-                color="comparison_group",
-                error_y="sd",
-                markers=True,
-                title="Grouped profiles: pixel mean ±1 SD",
-            ),
-            width="stretch",
+        if channels:
+            channel = _remembered_input(
+                st.selectbox,
+                "Grain detection channel",
+                channels,
+                key=key + "_grain_channel",
+            )
+            results = [r for r in results if state["layers"][r.layer_key].channel == channel]
+        parts = [r.shape_table if name == "All grain means" else r.pixel_table for r in results]
+        frame = combine_tables(parts)
+    elif name == "All selection means (domains, spots and profiles)":
+        frame = selection_means(state)
+        st.caption(
+            "One arithmetic mean per saved selection and sample/mineral/run. Missing values are ignored per channel. Overlapping selections remain separate groups; observation_count reports contributing rows before channel-specific missing values."
         )
-    st.dataframe(
-        radial.groupby(["grain_id", "radial_zone"]).size().rename("n_pixels").reset_index(),
-        width="stretch",
-        hide_index=True,
-    )
-    if st.button("Use radial and spoke pixels in plotting"):
-        st.session_state.tables[
-            f"Grain core-rim pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-        ] = radial
-        st.session_state.tables[
-            f"Grain spoke pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-        ] = pixels
-        st.session_state.tables[
-            f"Grain spoke bins | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
-        ] = summary
-        st.session_state.active_table_name = (
-            f"Grain spoke pixels | {layer.sample_id} | {layer.mineral_id} | {layer.run_id}"
+    elif name == "All saved selections":
+        parts = list(state.get("selections", {}).values())
+        frame = combine_tables(parts)
+        st.caption("Selections may overlap; their rows remain separate observations.")
+    else:
+        frame = tables[name]
+    if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
+        frame = frame.copy(deep=False)
+        frame["dataset_id"] = (
+            frame["sample_id"]
+            .fillna("(missing)")
+            .astype(str)
+            .str.cat(
+                [
+                    frame["mineral_id"].fillna("(missing)").astype(str),
+                    frame["run_id"].fillna("(missing)").astype(str),
+                ],
+                sep=" | ",
+            )
         )
-        st.success("Radial zones and spoke pixels are now available to every plotting filter.")
-    a, b = st.columns(2)
-    download_table("Download radial pixels", radial, "grain_core_rim_pixels.csv", container=a)
-    download_table("Download spoke pixels", pixels, "grain_spoke_pixels.csv", container=b)
+    return name, filter_table_ui(frame, name, key)
