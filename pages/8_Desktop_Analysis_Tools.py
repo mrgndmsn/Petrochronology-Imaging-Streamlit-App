@@ -1,200 +1,387 @@
-from core.page_memory import remembered_input as _remembered_input
-import numpy as np
-import pandas as pd
+from __future__ import annotations
+from core.exports import download_table
 
-DERIVED_PREFIXES = (
-    "Grain ",
-    "Selection |",
-    "Boundary ",
-    "Compared grain",
-    "Calculated map |",
-    "Line profile",
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import streamlit as st
+from core.exports import render_chart
+
+from core.desktop_tools import (
+    boundary_pair_tables,
+    grouped_upb_means,
+    mineral_fraction_table,
+    mineral_variability_table,
+    profile_envelope,
+)
+from core.io import numeric_columns
+from core.mineral_layers import mineral_layers_ui
+from core.state import initialize_state
+
+st.set_page_config(page_title="Spatial analysis tools", page_icon="📈", layout="wide")
+initialize_state()
+st.title("Spatial analysis tools")
+analysis = st.radio(
+    "Analysis",
+    ["Mineral summaries", "Boundary comparisons", "Profile summaries", "Grouped U–Pb"],
+    horizontal=True,
+    key="analysis_8_Desktop_Analysis_Tools",
 )
 
-
-def combine_tables(parts):
-    parts = list(parts)
-    if len(parts) == 1:
-        return parts[0].reset_index(drop=True)
-    return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
-
-
-def imported_observations(state):
-    tables = state.get("tables", {})
-    names = [
-        n
-        for n in tables
-        if n.startswith(("Raster channels |", "Point layer |", "Analysis table |"))
-    ]
-    if not names:
-        names = [
-            n
-            for n in tables
-            if not tables[n].attrs.get("calculation_snapshot")
-            and not n.startswith(DERIVED_PREFIXES)
-            and "distance_along_profile_um" not in tables[n]
-            and "inside_phase" not in tables[n]
-        ]
-    parts = []
-    identities = set()
-    raster_identities = {
-        (l.sample_id, l.mineral_id, l.run_id) for l in state.get("layers", {}).values()
-    }
-    for name in names:
-        frame = tables[name]
-        if name.startswith("Raster channels |") and {
-            "sample_id",
-            "mineral_id",
-            "run_id",
-        }.issubset(frame):
-
-            mapped = pd.MultiIndex.from_frame(frame[["sample_id", "mineral_id", "run_id"]]).isin(
-                raster_identities
-            )
-            frame = frame.loc[~mapped]
-            if frame.empty:
-                continue
-        frame = frame.copy(deep=False)
-        frame["source_table"] = name
-        parts.append(frame)
-        if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
-            identities.update(
-                map(
-                    tuple,
-                    frame[["sample_id", "mineral_id", "run_id"]].drop_duplicates().to_numpy(),
-                )
-            )
-    for layer in state.get("point_layers", {}).values():
-        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
-        if identity in identities:
-            continue
-        frame = layer.frame.copy(deep=False)
-        for c, v in zip(("sample_id", "mineral_id", "run_id"), identity):
-            frame[c] = v
-        frame["source_table"] = layer.key
-        parts.append(frame)
-        identities.add(identity)
-    from .provenance import compatible_layers, all_channel_pixel_table
-
-    layers = state.get("layers", {})
-    for layer in layers.values():
-        identity = (layer.sample_id, layer.mineral_id, layer.run_id)
-        if identity in identities:
-            continue
-        mask = np.zeros(layer.values.shape, bool)
-        for other in compatible_layers(layer, layers):
-            mask |= np.isfinite(other.values)
-        r, c = np.where(mask)
-        frame = all_channel_pixel_table(layer, r, c, layers)
-        frame["source_table"] = layer.key
-        parts.append(frame)
-        identities.add(identity)
-    return combine_tables(parts)
-
-
-def selection_means(state):
-
-    parts = []
-    identifiers = ["sample_id", "mineral_id", "run_id", "selection_id", "profile_id"]
-    excluded = {
-        "row_index",
-        "column_index",
-        "x",
-        "y",
-        "X",
-        "Y",
-        "x [um]",
-        "y [um]",
-        "grain_id",
-        "distance_along_profile_um",
-    }
-    for key, source in state.get("selections", {}).items():
-        if source.empty:
-            continue
-        frame = source.copy()
-        if "selection_id" not in frame:
-            frame["selection_id"] = key
-        groups = [c for c in identifiers if c in frame]
-        numeric = [
-            c
-            for c in frame.select_dtypes(include="number").columns
-            if c not in excluded and c not in groups
-        ]
-        frame[numeric] = frame[numeric].replace([np.inf, -np.inf], np.nan)
-        grouped = frame.groupby(groups, dropna=False, sort=False)
-        means = grouped[numeric].mean()
-        means["observation_count"] = grouped.size()
-        means = means.reset_index()
-        means["selection_key"] = key
-        parts.append(means)
-    return combine_tables(parts)
-
-
-def analysis_source_ui(state, key, label="Data source", tables=None):
-    import streamlit as st
-    from .ui_filters import filter_table_ui
-
-    if tables is not None:
-        all_label = "All matching tables"
-        names = [all_label] + list(tables)
+if analysis == "Mineral summaries":
+    mineral_points = mineral_layers_ui(st.session_state, "summary")
+    if not mineral_points:
+        st.info("Import co-located mineral point tables first.")
     else:
-        tables = state.get("tables", {})
-        all_label = "All imported observations"
-        names = [
-            all_label,
-            "All grain means",
-            "All grain pixels",
-            "All saved selections",
-            "All selection means (domains, spots and profiles)",
-        ] + list(tables)
-    name = _remembered_input(st.selectbox, label, list(dict.fromkeys(names)), key=key + "_source")
-    if name == all_label:
-        if all_label == "All imported observations":
-            frame = imported_observations(state)
-        else:
-            frame = combine_tables(tables.values())
-    elif name in ("All grain means", "All grain pixels"):
-        results = list(state.get("grain_results", {}).values())
-        channels = list(
-            dict.fromkeys(
-                state["layers"][r.layer_key].channel
-                for r in results
-                if r.layer_key in state.get("layers", {})
-            )
-        )
-        if channels:
-            channel = _remembered_input(
-                st.selectbox,
-                "Grain detection channel",
-                channels,
-                key=key + "_grain_channel",
-            )
-            results = [r for r in results if state["layers"][r.layer_key].channel == channel]
-        parts = [r.shape_table if name == "All grain means" else r.pixel_table for r in results]
-        frame = combine_tables(parts)
-    elif name == "All selection means (domains, spots and profiles)":
-        frame = selection_means(state)
+        selected = sorted({x.sample_id for x in mineral_points.values()})
+        st.subheader("Mineral abundance / selected-channel fractions")
         st.caption(
-            "One arithmetic mean per saved selection and sample/mineral/run. Missing values are ignored per channel. Overlapping selections remain separate groups; observation_count reports contributing rows before channel-specific missing values."
+            "Pixels counts measured points; it is not ppm. The concentration variation plot below is separate."
         )
-    elif name == "All saved selections":
-        parts = list(state.get("selections", {}).values())
-        frame = combine_tables(parts)
-        st.caption("Selections may overlap; their rows remain separate observations.")
-    else:
-        frame = tables[name]
-    if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
-        frame = frame.copy(deep=False)
-        frame["dataset_id"] = (
-            frame["sample_id"]
-            .fillna("(missing)")
-            .astype(str)
-            .str.cat(
-                [
-                    frame["mineral_id"].fillna("(missing)").astype(str),
-                    frame["run_id"].fillna("(missing)").astype(str),
-                ],
-                sep=" | ",
+        all_channels = sorted({c for layer in mineral_points.values() for c in layer.channels})
+        categories = st.radio("Fraction categories", ["Minerals", "Saved domains"], horizontal=True)
+        if categories == "Saved domains":
+            from core.domain_fractions import domain_fraction_ui
+
+            domain_fraction_ui(mineral_points, st.session_state)
+        else:
+            mode = st.selectbox("Fraction value", ["pixels", "sum", "mean"])
+            all_channels = sorted({c for x in mineral_points.values() for c in x.channels})
+            value = (
+                st.selectbox("Channel", all_channels, disabled=mode == "pixels")
+                if all_channels
+                else None
             )
+            fractions = mineral_fraction_table(mineral_points, selected, mode, value)
+            if not fractions.empty:
+                pie = px.pie(
+                    fractions,
+                    names="mineral_id",
+                    values="value",
+                    facet_col="sample_id",
+                    facet_row="run_id",
+                    title="Mineral fractions",
+                )
+                render_chart(pie, width="stretch")
+                stack = px.bar(
+                    fractions,
+                    x="sample_id",
+                    y="percent",
+                    color="mineral_id",
+                    barmode="stack",
+                    facet_col="run_id",
+                    title="Stacked mineral fractions",
+                )
+                render_chart(stack, width="stretch")
+                download_table("Download mineral fractions", fractions, "mineral_fractions.csv")
+        from core.desktop_tools import ordered_channels, element_fraction_table
+
+        st.subheader("Mean concentration and variation")
+        st.caption(
+            "Bars show arithmetic mean ppm for concentration channels. Error bars show ±1 sample standard deviation across finite pixel values, not uncertainty of the mean. Samples and runs are kept separate."
         )
-    return name, filter_table_ui(frame, name, key)
+        channels = st.multiselect(
+            "Element-variability channels",
+            all_channels,
+            default=all_channels[: min(6, len(all_channels))],
+        )
+        order_text = st.text_area(
+            "Channel order (one selected column name per line)",
+            help="Listed channels come first; remaining selected channels follow in selection order.",
+        )
+        try:
+            channels = ordered_channels(channels, order_text)
+        except ValueError as exc:
+            st.error(str(exc))
+        variability = mineral_variability_table(mineral_points, channels)
+        if not variability.empty:
+            figure = px.bar(
+                variability,
+                x="channel",
+                y="mean",
+                error_y="sd",
+                color="mineral_id",
+                barmode="group",
+                facet_col="sample_id",
+                facet_row="run_id",
+                category_orders={"channel": channels},
+                labels={
+                    "mean": "Mean concentration (ppm)",
+                    "channel": "Element / column",
+                },
+                title="Mean concentration ±1 SD",
+            )
+            render_chart(figure, width="stretch")
+            st.dataframe(variability, width="stretch", hide_index=True)
+            download_table(
+                "Download element variability",
+                variability,
+                "mineral_element_variability.csv",
+            )
+            st.subheader("Element contributions by mineral")
+            fraction_stat = st.selectbox("Element fraction basis", ["Mean ppm", "Sum of pixel ppm"])
+            contributions = element_fraction_table(
+                mineral_points,
+                channels,
+                "mean" if fraction_stat == "Mean ppm" else "sum",
+            )
+            st.caption(
+                "Each element totals 100% across the included minerals in one sample/run. These are relative concentration contributions, not bulk mass fractions. Only positive contributions enter the denominator."
+            )
+            render_chart(
+                px.bar(
+                    contributions,
+                    x="channel",
+                    y="percent",
+                    color="mineral_id",
+                    barmode="stack",
+                    facet_col="sample_id",
+                    facet_row="run_id",
+                    category_orders={"channel": channels},
+                    labels={
+                        "percent": "Contribution (%)",
+                        "channel": "Element / column",
+                    },
+                ),
+                width="stretch",
+            )
+            if st.checkbox("Show one pie per selected element"):
+                pie_data = contributions.copy()
+                pie_data["Sample / run"] = pie_data.sample_id + " / " + pie_data.run_id
+                render_chart(
+                    px.pie(
+                        pie_data,
+                        names="mineral_id",
+                        values="value",
+                        facet_col="channel",
+                        facet_row="Sample / run",
+                        category_orders={"channel": channels},
+                        title="Element contributions by mineral",
+                    ),
+                    width="stretch",
+                )
+            download_table(
+                "Download ordered element fractions",
+                contributions,
+                "element_fractions.csv",
+            )
+
+if analysis == "Boundary comparisons":
+    candidates = {name: df for name, df in st.session_state.tables.items() if "inside_phase" in df}
+    if not candidates:
+        st.info("Run a mineral boundary-buffer analysis first.")
+    else:
+        from core.data_sources import analysis_source_ui
+
+        name, frame = analysis_source_ui(
+            st.session_state, "boundary_summary", "Boundary table", candidates
+        )
+        values = st.multiselect(
+            "Channels",
+            numeric_columns(frame, excluded=("inside_phase",)),
+            default=numeric_columns(frame, excluded=("inside_phase",))[:6],
+        )
+        if values:
+            summary, pairs = boundary_pair_tables(frame, values)
+            st.dataframe(summary, width="stretch", hide_index=True)
+            st.dataframe(pairs, width="stretch", hide_index=True)
+            a, b = st.columns(2)
+            download_table(
+                "Download boundary differences",
+                summary,
+                "boundary_differences.csv",
+                container=a,
+            )
+            download_table(
+                "Download boundary ratio pairs",
+                pairs,
+                "boundary_ratio_pairs.csv",
+                container=b,
+            )
+
+if analysis == "Profile summaries":
+    candidates = {
+        name: df
+        for name, df in st.session_state.tables.items()
+        if any(c in df for c in ["distance_along_profile_um", "distance_normalized"])
+    }
+    if not candidates:
+        st.info("Create a line or radial profile first.")
+    else:
+        from core.data_sources import analysis_source_ui
+
+        name, frame = analysis_source_ui(
+            st.session_state, "profile_summary", "Profile table", candidates
+        )
+        x = st.selectbox(
+            "Distance",
+            [
+                c
+                for c in [
+                    "distance_along_profile_um",
+                    "distance_normalized",
+                    "distance_um",
+                ]
+                if c in frame
+            ],
+        )
+        values = st.multiselect(
+            "Variables",
+            numeric_columns(frame, excluded=(x,)),
+            default=numeric_columns(frame, excluded=(x,))[:3],
+        )
+        group = st.selectbox(
+            "Separate/color profiles",
+            ["None"] + [c for c in ["profile_id", "profile_number", "grain_id"] if c in frame],
+        )
+        color_groups = st.text_input("Profile color groups (example: 1,2=Core set; 3,4=Rim set)")
+        if color_groups and "profile_number" in frame:
+            frame = frame.copy()
+            frame["profile_color_group"] = frame["profile_number"].astype(str)
+            for rule in color_groups.split(";"):
+                if "=" not in rule:
+                    continue
+                members, label = rule.split("=", 1)
+                members = {x.strip() for x in members.split(",")}
+                frame.loc[
+                    frame.profile_number.astype(str).isin(members),
+                    "profile_color_group",
+                ] = label.strip()
+            group = "profile_color_group"
+        bins = st.number_input("Distance bins", 2, 500, 50)
+        envelope = st.selectbox("Envelope", ["Median + IQR", "Median + 10–90%", "Mean ± SD"])
+        positive_only = st.checkbox("Ignore zero/negative values", value=True)
+        robust = st.checkbox("Remove extreme IQR outliers", value=True)
+        log_y = st.checkbox("Log Y axis")
+        axis_mode = st.selectbox(
+            "Y-axis layout", ["Shared axis", "Separate panel for each variable"]
+        )
+        y_range_text = st.text_area("Custom Y ranges (one per line; example: U238_ppm=0,500)")
+        if values:
+            result = profile_envelope(
+                frame,
+                x,
+                values,
+                None if group == "None" else group,
+                bins,
+                envelope,
+                positive_only,
+                robust,
+            )
+            fig = (
+                make_subplots(rows=len(values), cols=1, shared_xaxes=True, subplot_titles=values)
+                if axis_mode.startswith("Separate")
+                else go.Figure()
+            )
+            grouping = ["channel"] + ([] if group == "None" else [group])
+            for identity, part in result.groupby(grouping, dropna=False):
+                label = " | ".join(
+                    map(str, identity if isinstance(identity, tuple) else (identity,))
+                )
+                channel = identity[0] if isinstance(identity, tuple) else identity
+                row = values.index(channel) + 1 if axis_mode.startswith("Separate") else None
+                for trace in [
+                    go.Scatter(
+                        x=part.x,
+                        y=part["upper"],
+                        mode="lines",
+                        line={"width": 0},
+                        showlegend=False,
+                        hoverinfo="skip",
+                    ),
+                    go.Scatter(
+                        x=part.x,
+                        y=part["lower"],
+                        mode="lines",
+                        fill="tonexty",
+                        line={"width": 0},
+                        name=label + " envelope",
+                        opacity=0.18,
+                    ),
+                    go.Scatter(x=part.x, y=part["mean"], mode="lines+markers", name=label),
+                ]:
+                    (fig.add_trace(trace, row=row, col=1) if row else fig.add_trace(trace))
+            fig.update_layout(template="plotly_white", xaxis_title=x, yaxis_title="Value")
+            if log_y:
+                fig.update_yaxes(type="log")
+            y_ranges = {}
+            for line in y_range_text.splitlines():
+                if "=" not in line:
+                    continue
+                channel_name, bounds = line.split("=", 1)
+                try:
+                    low, high = [float(v.strip()) for v in bounds.replace(":", ",").split(",")[:2]]
+                    if not np.isfinite([low, high]).all() or low >= high or (log_y and low <= 0):
+                        raise ValueError("Invalid axis bounds")
+                    y_ranges[channel_name.strip()] = [low, high]
+                except (TypeError, ValueError):
+                    st.warning(f"Could not read Y range: {line}")
+            if axis_mode.startswith("Separate"):
+                for row_number, channel_name in enumerate(values, 1):
+                    if channel_name in y_ranges:
+                        fig.update_yaxes(
+                            range=(
+                                np.log10(y_ranges[channel_name]).tolist()
+                                if log_y
+                                else y_ranges[channel_name]
+                            ),
+                            row=row_number,
+                            col=1,
+                        )
+            elif len(values) == 1 and values[0] in y_ranges:
+                fig.update_yaxes(
+                    range=(np.log10(y_ranges[values[0]]).tolist() if log_y else y_ranges[values[0]])
+                )
+            render_chart(fig, width="stretch")
+            st.download_button(
+                "Download profile figure",
+                fig.to_html(include_plotlyjs=True),
+                "profile_figure.html",
+                "text/html",
+            )
+            download_table("Download binned profiles", result, "binned_profiles.csv")
+
+if analysis == "Grouped U–Pb":
+    if not st.session_state.tables:
+        st.info("Import a U–Pb analysis table first.")
+    else:
+        from core.data_sources import analysis_source_ui
+
+        name, frame = analysis_source_ui(st.session_state, "grouped_upb", "U–Pb table")
+        groups = st.multiselect(
+            "Group means by",
+            [
+                c
+                for c in [
+                    "sample_id",
+                    "mineral_id",
+                    "run_id",
+                    "grain_id",
+                    "selection_id",
+                    "profile_id",
+                ]
+                if c in frame
+            ],
+        )
+        ratio_options = ["Not selected"] + numeric_columns(frame)
+        ratios = [
+            st.selectbox(label, ratio_options, key="grouped_ratio_" + system)
+            for system, label in [
+                ("68", "206Pb/238U ratio"),
+                ("75", "207Pb/235U ratio"),
+                ("76", "207Pb/206Pb ratio"),
+            ]
+        ]
+        st.caption(
+            "Assign ratio columns explicitly. Calculations use paired finite rows; internal errors are standard errors of pixel means, not instrument uncertainties. Correlated pixels can underestimate uncertainty."
+        )
+        ratio_method = st.radio(
+            "²⁰⁷Pb/²³⁵U group calculation",
+            ["Mean of pixel ratios", "Ratio of means/product"],
+            horizontal=True,
+        )
+        if "Not selected" not in ratios and len(set(ratios)) == 3:
+            means = grouped_upb_means(frame, groups, ratios, ratio_method)
+            st.dataframe(means, width="stretch", hide_index=True)
+            download_table("Download grouped U–Pb means", means, "grouped_upb_means.csv")
