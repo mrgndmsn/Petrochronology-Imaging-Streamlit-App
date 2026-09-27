@@ -232,6 +232,51 @@ def spatial_rows(selected, state):
     )
 
 
+def complete_pixel_channels(frame, state):
+    from .provenance import compatible_layers
+
+    if not set(IDS + ["row_index", "column_index", "x", "y"]).issubset(frame):
+        return frame.copy()
+    parts = []
+    for identity, group in frame.groupby(IDS, dropna=False, sort=False):
+        group = group.copy()
+        reference = next(
+            (
+                layer
+                for layer in state.get("layers", {}).values()
+                if tuple(str(getattr(layer, c)) for c in IDS) == tuple(map(str, identity))
+            ),
+            None,
+        )
+        if reference is not None:
+            rows = pd.to_numeric(group.row_index, errors="coerce").to_numpy(float)
+            cols = pd.to_numeric(group.column_index, errors="coerce").to_numpy(float)
+            valid = (
+                np.isfinite(rows)
+                & np.isfinite(cols)
+                & (rows == np.floor(rows))
+                & (cols == np.floor(cols))
+                & (rows >= 0)
+                & (cols >= 0)
+                & (rows < reference.values.shape[0])
+                & (cols < reference.values.shape[1])
+            )
+            indices = np.flatnonzero(valid)
+            rr, cc = rows[valid].astype(int), cols[valid].astype(int)
+            xx, yy = reference.coordinates_at(rr, cc)
+            aligned = np.isclose(xx, group.x.to_numpy()[valid], rtol=0, atol=1e-8) & np.isclose(
+                yy, group.y.to_numpy()[valid], rtol=0, atol=1e-8
+            )
+            indices, rr, cc = indices[aligned], rr[aligned], cc[aligned]
+            for layer in compatible_layers(reference, state["layers"]):
+                if layer.channel not in group:
+                    values = np.full(len(group), np.nan)
+                    values[indices] = layer.values[rr, cc]
+                    group[layer.channel] = values
+        parts.append(group)
+    return pd.concat(parts).sort_index() if parts else frame.copy()
+
+
 def linked_map_ui(selected, state, key_prefix="xy"):
     import streamlit as st
     import plotly.graph_objects as go
@@ -398,7 +443,7 @@ def linked_map_ui(selected, state, key_prefix="xy"):
         while name in state.selections:
             name = f"{base} {i}"
             i += 1
-        spatial = spatial.copy()
+        spatial = complete_pixel_channels(spatial, state)
         spatial["selection_type"] = "xy_link"
         spatial["selection_id"] = name
         spatial.attrs["display_color"] = highlight_color
