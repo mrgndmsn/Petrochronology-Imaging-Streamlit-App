@@ -418,7 +418,9 @@ def xy_figure(
     marker_size=6,
 ):
     kwargs = {
-        "data_frame": frame,
+        "data_frame": frame[
+            list(dict.fromkeys(c for c in (x, y, color, symbol, "__xy_link_row__") if c in frame))
+        ],
         "x": x,
         "y": y,
         "opacity": opacity,
