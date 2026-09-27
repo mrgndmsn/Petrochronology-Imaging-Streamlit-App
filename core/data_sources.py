@@ -14,6 +14,8 @@ DERIVED_PREFIXES = (
 
 def combine_tables(parts):
     parts = list(parts)
+    if len(parts) == 1:
+        return parts[0].reset_index(drop=True)
     return pd.concat(parts, ignore_index=True, sort=False) if parts else pd.DataFrame()
 
 
@@ -39,7 +41,7 @@ def imported_observations(state):
         (l.sample_id, l.mineral_id, l.run_id) for l in state.get("layers", {}).values()
     }
     for name in names:
-        frame = tables[name].copy()
+        frame = tables[name]
         if name.startswith("Raster channels |") and {
             "sample_id",
             "mineral_id",
@@ -49,9 +51,10 @@ def imported_observations(state):
             mapped = pd.MultiIndex.from_frame(frame[["sample_id", "mineral_id", "run_id"]]).isin(
                 raster_identities
             )
-            frame = frame.loc[~mapped].copy()
+            frame = frame.loc[~mapped]
             if frame.empty:
                 continue
+        frame = frame.copy(deep=False)
         frame["source_table"] = name
         parts.append(frame)
         if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
@@ -65,7 +68,7 @@ def imported_observations(state):
         identity = (layer.sample_id, layer.mineral_id, layer.run_id)
         if identity in identities:
             continue
-        frame = layer.frame.copy()
+        frame = layer.frame.copy(deep=False)
         for c, v in zip(("sample_id", "mineral_id", "run_id"), identity):
             frame[c] = v
         frame["source_table"] = layer.key
@@ -181,7 +184,7 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
     else:
         frame = tables[name]
     if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
-        frame = frame.copy()
+        frame = frame.copy(deep=False)
         frame["dataset_id"] = (
             frame["sample_id"]
             .fillna("(missing)")
