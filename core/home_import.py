@@ -194,7 +194,7 @@ with st.expander("Import aligned matrix files"):
         key="matrix_files",
     )
     st.caption(
-        "For large matrix stacks, upload small batches. Uploaded CSV files also consume server memory. For scaled matrices, collapse repeated coordinates to reduce the stored raster size."
+        "For large matrix stacks, use the Matrix CSV ZIP uploader below. A ZIP reduces upload memory without changing any values. Matrices are parsed one at a time."
     )
     archive_upload = st.file_uploader(
         "Matrix CSV ZIP (alternative to separate CSV uploads)",
@@ -239,7 +239,7 @@ with st.expander("Import aligned matrix files"):
             y_reference = by_name[archive_y]
         files = [f for f in archive_members if f.name not in (archive_x, archive_y)]
         st.caption(
-            "Select both coordinate CSVs above so they are excluded from chemistry channels. Enter sample, mineral, run and pixel sizes as usual. Only one member is decompressed at a time when duplicate-coordinate collapse is enabled."
+            "Select both coordinate CSVs above so they are excluded from chemistry channels. Enter sample, mineral, run and pixel sizes as usual. Only one chemistry matrix is decompressed at a time."
         )
     st.caption(
         "Coordinate references must match the raw channel shapes. Both are required together; their physical centers replace origin/axis coordinates, while the explicit X/Y sizes define pixel footprint."
@@ -291,11 +291,11 @@ with st.expander("Import aligned matrix files"):
                     )
                     layers.update(part)
             else:
-                records = [
-                    (channels[f.name], f.name, read_numeric_matrix(f.getvalue())) for f in files
-                ]
-                layers = matrix_layers(
-                    records,
+                from core.io import matrix_layers_from_files
+
+                layers = matrix_layers_from_files(
+                    files,
+                    channels,
                     *cfg,
                     origin_x_um=ox,
                     origin_y_um=oy,
@@ -303,7 +303,6 @@ with st.expander("Import aligned matrix files"):
                     x_coordinates=xcoords,
                     y_coordinates=ycoords,
                 )
-                del records
             del xcoords, ycoords
             commit_layers(layers)
             st.success(f"Imported {len(layers)} aligned channels.")
