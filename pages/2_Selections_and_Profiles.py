@@ -455,7 +455,10 @@ if matching:
                 st.success(f"Saved {len(subset)} filtered pixels as {copy_name}.")
 
     st.dataframe(pd.DataFrame([selection_summary(table)]), hide_index=True, width="stretch")
-    st.dataframe(table, width="stretch", hide_index=True)
+    st.caption(
+        f"Preview: first {min(len(table), 1000):,} of {len(table):,} rows. Statistics and downloads use the complete selection."
+    )
+    st.dataframe(table.head(1000), width="stretch", hide_index=True)
     if "distance_along_profile_um" in table:
         skip = {
             "sample_id",
