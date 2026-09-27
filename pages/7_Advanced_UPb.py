@@ -50,7 +50,7 @@ if tool == "Concordia":
         if coordinates == "Wetherill"
         else ("238U/206Pb", "207Pb/206Pb")
     )
-    plot = frame.copy()
+    plot = frame.copy(deep=False)
     if coordinates == "Wetherill":
         plot["plot_x"], plot["plot_y"] = plot.r75, plot.r68
         plot["plot_sx"], plot["plot_sy"], plot["plot_rho"] = (
@@ -320,7 +320,7 @@ else:
         }[s],
         key="upb_date_system",
     )
-    dates = frame.copy()
+    dates = frame.copy(deep=False)
     dates["date_ma"] = age_from_ratio(dates["r" + system], system, **constants)
     dates["date_1sigma_ma"] = age_uncertainty(
         dates["r" + system], dates["s" + system], system, **constants
