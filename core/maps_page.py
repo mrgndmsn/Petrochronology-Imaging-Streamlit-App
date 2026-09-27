@@ -17,7 +17,11 @@ from core.ui_filters import channel_layers_ui
 visible = channel_layers_ui(st.session_state, "map")
 channel = visible[0].channel
 layer = visible[0]
-finite = np.concatenate([l.values[np.isfinite(l.values)] for l in visible])
+finite = (
+    layer.values[np.isfinite(layer.values)]
+    if len(visible) == 1
+    else np.concatenate([l.values[np.isfinite(l.values)] for l in visible])
+)
 if not finite.size:
     st.info("The visible maps contain no finite values.")
     st.stop()
