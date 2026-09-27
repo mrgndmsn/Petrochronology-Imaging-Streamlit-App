@@ -66,7 +66,7 @@ def map_figure(
         figure.add_trace(
             go.Heatmap(
                 z=display_values,
-                customdata=layer.values,
+                customdata=layer.values if log_color else None,
                 x=layer.x,
                 y=layer.y,
                 dx=layer.pixel_size[0],
@@ -76,7 +76,11 @@ def map_figure(
                 zmax=vmax,
                 colorbar={"title": ("log10 " if log_color else "") + layer.channel},
                 showscale=show_colorbar,
-                hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>value=%{customdata:.5g}<extra></extra>",
+                hovertemplate=(
+                    "x=%{x:.4g}<br>y=%{y:.4g}<br>value="
+                    + ("%{customdata:.5g}" if log_color else "%{z:.5g}")
+                    + "<extra></extra>"
+                ),
             )
         )
     if labels is not None and np.any(np.asarray(labels) > 0):
