@@ -30,16 +30,24 @@ def save_project(
     import pickle
     from pathlib import Path
 
+    stored_objects = {}
+
     class DiskSnapshot:
         def __init__(self, mapping, directory, prefix):
             self.entries = []
             for index, (key, value) in enumerate(list(mapping.items())):
                 if progress:
                     progress(f"Snapshot: {key}")
-                path = directory / f"{prefix}_{index}.pickle"
-                with path.open("wb") as handle:
-                    pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
-                self.entries.append((key, path))
+                token = id(value)
+                if token not in stored_objects:
+                    path = directory / f"{prefix}_{index}.pickle"
+                    with path.open("wb") as handle:
+                        pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    stored_objects[token] = path
+                self.entries.append((key, stored_objects[token]))
+
+        def storage_key(self, key):
+            return next(path for name, path in self.entries if name == key)
 
         def items(self):
             for key, path in self.entries:
@@ -118,6 +126,15 @@ def _save_project(
         "point_layers": [],
         "calculation_definitions": _json_safe(definitions or []),
     }
+    written_tables = {}
+
+    def write_table_once(archive, mapping, key, path, frame):
+        token = mapping.storage_key(key) if hasattr(mapping, "storage_key") else id(frame)
+        if token not in written_tables:
+            _write_table(archive, path, frame)
+            written_tables[token] = path
+        return written_tables[token]
+
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
         for index, (key, layer) in enumerate(layers.items()):
             path = f"layers/layer_{index}.npz"
@@ -153,7 +170,7 @@ def _save_project(
             if progress:
                 progress(f"Writing table: {name}")
             path = f"tables/table_{index}.json"
-            _write_table(archive, path, frame)
+            path = write_table_once(archive, tables, name, path, frame)
             manifest["tables"].append(
                 {"name": name, "path": path, "attrs": _json_safe(frame.attrs)}
             )
@@ -161,9 +178,8 @@ def _save_project(
             if progress:
                 progress(f"Writing grains: {key}")
             label_path = f"grains/labels_{index}.npy"
-            buffer = BytesIO()
-            np.save(buffer, result.labels, allow_pickle=False)
-            archive.writestr(label_path, buffer.getvalue())
+            with archive.open(label_path, "w", force_zip64=True) as handle:
+                np.save(handle, result.labels, allow_pickle=False)
             shape_path = f"grains/shapes_{index}.json"
             pixel_path = f"grains/pixels_{index}.json"
             _write_table(archive, shape_path, result.shape_table)
@@ -182,7 +198,7 @@ def _save_project(
             if progress:
                 progress(f"Writing selection: {key}")
             path = f"selections/selection_{index}.json"
-            _write_table(archive, path, frame)
+            path = write_table_once(archive, selections, key, path, frame)
             manifest["selections"].append(
                 {"key": key, "path": path, "attrs": _json_safe(frame.attrs)}
             )
@@ -241,7 +257,14 @@ def load_project(data):
                     },
                 )
             layers[item["key"]] = layer
-        tables = {item["name"]: _read_frame(archive, item["path"]) for item in manifest["tables"]}
+        frames = {}
+
+        def read_frame(path):
+            if path not in frames:
+                frames[path] = _read_frame(archive, path)
+            return frames[path]
+
+        tables = {item["name"]: read_frame(item["path"]) for item in manifest["tables"]}
         for item in manifest["tables"]:
             tables[item["name"]].attrs.update(item.get("attrs", {}))
         grains = {}
@@ -250,13 +273,12 @@ def load_project(data):
             grains[item["key"]] = GrainResult(
                 item["layer_key"],
                 labels,
-                _read_frame(archive, item["shapes"]),
-                _read_frame(archive, item["pixels"]),
+                read_frame(item["shapes"]),
+                read_frame(item["pixels"]),
                 item.get("settings", {}),
             )
         selections = {
-            item["key"]: _read_frame(archive, item["path"])
-            for item in manifest.get("selections", [])
+            item["key"]: read_frame(item["path"]) for item in manifest.get("selections", [])
         }
         for item in manifest.get("selections", []):
             selections[item["key"]].attrs.update(item.get("attrs", {}))
@@ -265,7 +287,7 @@ def load_project(data):
                 item["sample_id"],
                 item["mineral_id"],
                 item["run_id"],
-                _read_frame(archive, item["path"]),
+                read_frame(item["path"]),
                 item["x_column"],
                 item["y_column"],
                 item.get("metadata", {}),
@@ -300,9 +322,10 @@ def _json_safe(value):
 
 
 def _read_frame(archive, path):
-    if path.endswith(".json"):
-        return pd.read_json(BytesIO(archive.read(path)), orient="table")
-    try:
-        return pd.read_csv(BytesIO(archive.read(path)))
-    except pd.errors.EmptyDataError:
-        return pd.DataFrame()
+    with archive.open(path) as handle:
+        if path.endswith(".json"):
+            return pd.read_json(handle, orient="table")
+        try:
+            return pd.read_csv(handle)
+        except pd.errors.EmptyDataError:
+            return pd.DataFrame()
