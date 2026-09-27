@@ -119,7 +119,7 @@ if analysis == "REE":
     cols = st.columns(2)
     ymin = cols[0].number_input("REE Y minimum (optional)", value=None)
     ymax = cols[1].number_input("REE Y maximum (optional)", value=None)
-    work = frame.copy()
+    work = frame.copy(deep=False)
     if mode == "Distance zones":
         distances = [c for c in numbers if "distance" in c or "radial" in c]
         if not distances:
@@ -254,7 +254,21 @@ if analysis == "Ternary":
             )
             if not tern.empty:
                 fig = px.scatter_ternary(
-                    tern,
+                    tern[
+                        list(
+                            dict.fromkeys(
+                                v
+                                for v in [
+                                    a + "_fraction",
+                                    b + "_fraction",
+                                    c + "_fraction",
+                                    color,
+                                    symbol,
+                                ]
+                                if v in tern
+                            )
+                        )
+                    ],
                     a=a + "_fraction",
                     b=b + "_fraction",
                     c=c + "_fraction",
