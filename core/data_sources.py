@@ -224,9 +224,10 @@ def selection_means(state, channels=None, available=()):
     return combine_tables(parts)
 
 
-def analysis_source_ui(state, key, label="Data source", tables=None):
+def analysis_source_ui(state, key, label="Data source", tables=None, retain_group_pixels=False):
     import streamlit as st
     from .ui_filters import filter_table_ui
+    from .provenance import has_grain_pixels, complete_grain_channels
 
     if tables is not None:
         all_label = "All matching tables"
@@ -242,6 +243,7 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
             "All selection means (domains, spots and profiles)",
         ] + list(tables)
     name = _remembered_input(st.selectbox, label, list(dict.fromkeys(names)), key=key + "_source")
+    channels = None
     if name == all_label:
         if all_label == "All imported observations":
             channels, available = analysis_channels_ui(
@@ -253,7 +255,13 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
             )
             frame = imported_observations(state, channels, available)
         else:
-            channels, available = analysis_channels_ui(state, key, tables.values(), source=name)
+            channels, available = analysis_channels_ui(
+                state,
+                key,
+                tables.values(),
+                source=name,
+                include_rasters=any(has_grain_pixels(f) for f in tables.values()),
+            )
             frame = combine_tables(
                 project_channels(f, channels, available) for f in tables.values()
             )
@@ -274,28 +282,55 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
                 key=key + "_grain_channel",
             )
             results = [r for r in results if state["layers"][r.layer_key].channel == channel]
-        parts = [r.shape_table if name == "All grain means" else r.pixel_table for r in results]
-        channels, available = analysis_channels_ui(state, key, parts, source=name)
+        parts = [
+            (
+                r.shape_table
+                if name == "All grain means" and not retain_group_pixels
+                else r.pixel_table
+            )
+            for r in results
+        ]
+        channels, available = analysis_channels_ui(
+            state, key, parts, source=name, include_rasters=any(has_grain_pixels(f) for f in parts)
+        )
         frame = combine_tables(project_channels(f, channels, available) for f in parts)
     elif name == "All selection means (domains, spots and profiles)":
         channels, available = analysis_channels_ui(
             state, key, state.get("selections", {}).values(), source=name
         )
-        frame = selection_means(state, channels, available)
+        frame = (
+            combine_tables(
+                project_channels(f, channels, available)
+                for f in state.get("selections", {}).values()
+            )
+            if retain_group_pixels
+            else selection_means(state, channels, available)
+        )
         st.caption(
-            "One arithmetic mean per saved selection and sample/mineral/run. Missing values are ignored per channel. Overlapping selections remain separate groups; observation_count reports contributing rows before channel-specific missing values."
+            "Pixel observations retained for grouped uncertainty calculation."
+            if retain_group_pixels
+            else "One arithmetic mean per saved selection and sample/mineral/run. Missing values are ignored per channel. Overlapping selections remain separate groups; observation_count reports contributing rows before channel-specific missing values."
         )
     elif name == "All saved selections":
         parts = list(state.get("selections", {}).values())
-        channels, available = analysis_channels_ui(state, key, parts, source=name)
+        channels, available = analysis_channels_ui(
+            state, key, parts, source=name, include_rasters=any(has_grain_pixels(f) for f in parts)
+        )
         frame = combine_tables(project_channels(f, channels, available) for f in parts)
         st.caption("Selections may overlap; their rows remain separate observations.")
     else:
         if key == "calculated" and tables[name].attrs.get("calculation_snapshot"):
             frame = tables[name]
         else:
-            channels, available = analysis_channels_ui(state, key, [tables[name]], source=name)
+            channels, available = analysis_channels_ui(
+                state,
+                key,
+                [tables[name]],
+                source=name,
+                include_rasters=has_grain_pixels(tables[name]),
+            )
             frame = project_channels(tables[name], channels, available)
+    frame = complete_grain_channels(frame, state.get("layers", {}), channels)
     if {"sample_id", "mineral_id", "run_id"}.issubset(frame):
         frame = frame.copy(deep=False)
         frame["dataset_id"] = (
