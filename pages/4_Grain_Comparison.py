@@ -29,15 +29,14 @@ channel = st.selectbox(
 visible = [l for l in available if l.channel == channel]
 chosen = [l.key for l in visible]
 parts = []
-pixel_parts = []
 for label in chosen:
     result = st.session_state.grain_results[label]
-    parts.append(result.shape_table.copy())
-    pixel_parts.append(result.pixel_table.copy())
+    parts.append(result.shape_table)
 if not parts:
     st.stop()
-grains = pd.concat(parts, ignore_index=True, sort=False)
-pixels = pd.concat(pixel_parts, ignore_index=True, sort=False)
+from core.data_sources import combine_tables
+
+grains = combine_tables(parts)
 grains = filter_table_ui(grains, "Selected grain sets", "grain_compare")
 if grains.empty:
     st.warning("No grains match the filters.")
@@ -79,13 +78,17 @@ counts = (
 st.dataframe(counts, width="stretch", hide_index=True)
 a, b = st.columns(2)
 download_table("Download filtered grain means", grains, "grain_comparison.csv", container=a)
-selected_uids = set(grains.grain_uid.astype(str)) if "grain_uid" in grains else set()
-selected_pixels = (
-    pixels[pixels.grain_uid.astype(str).isin(selected_uids)]
-    if selected_uids and "grain_uid" in pixels
-    else pixels
-)
 if b.button("Use selected grain pixels in plotting"):
+    selected_uids = set(grains.grain_uid.astype(str)) if "grain_uid" in grains else set()
+    pixel_parts = []
+    for label in chosen:
+        pixels = st.session_state.grain_results[label].pixel_table
+        pixel_parts.append(
+            pixels[pixels.grain_uid.astype(str).isin(selected_uids)]
+            if selected_uids and "grain_uid" in pixels
+            else pixels
+        )
+    selected_pixels = combine_tables(pixel_parts)
     st.session_state.tables["Compared grain pixels"] = selected_pixels
     st.session_state.active_table_name = "Compared grain pixels"
     st.success(
