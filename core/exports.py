@@ -41,6 +41,8 @@ def static_figure_bytes(figure, format="png", width=1200, height=800, scale=1):
 
 def normalize_selection_data(figure):
 
+    if isinstance(figure.layout.meta, dict) and "map_layer_key" in figure.layout.meta:
+        return figure
     for trace in figure.data:
         data = getattr(trace, "customdata", None)
         if isinstance(data, np.ndarray) and data.dtype != object:
