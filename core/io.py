@@ -404,3 +404,83 @@ def complete_coordinate_grid(values, shape):
     out = np.sum(np.asarray(columns) * fit[:, None, None], axis=0)
     out[finite] = values[finite]
     return out
+
+
+def matrix_layers_from_files(
+    files,
+    channels,
+    sample_id,
+    mineral_id,
+    run_id,
+    pixel_size_x_um,
+    pixel_size_y_um,
+    *,
+    origin_x_um=0.0,
+    origin_y_um=0.0,
+    crop=True,
+    x_coordinates=None,
+    y_coordinates=None,
+):
+    import tempfile
+    from pathlib import Path
+
+    validate_assignment(sample_id, mineral_id, run_id, pixel_size_x_um, pixel_size_y_um)
+    names = [str(channels[f.name]).strip() for f in files]
+    if (
+        not files
+        or any(not name or "::" in name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        raise ValueError("Each channel must have a unique, nonempty name without ::.")
+    if (x_coordinates is None) != (y_coordinates is None):
+        raise ValueError("Both X and Y coordinate references are required.")
+    with tempfile.TemporaryDirectory(prefix="geochemical-import-") as directory:
+        shape = None
+        union = None
+        paths = []
+        for index, file in enumerate(files):
+            values = read_numeric_matrix(file.getvalue())
+            if shape is None:
+                shape = values.shape
+                union = np.zeros(shape, dtype=bool)
+            if values.ndim != 2 or values.shape != shape:
+                raise ValueError("One aligned stack requires matrices with identical shapes.")
+            union |= np.isfinite(values)
+            path = Path(directory) / f"{index}.npy"
+            np.save(path, values, allow_pickle=False)
+            paths.append(path)
+            del values
+        row0 = col0 = 0
+        row1, col1 = shape
+        if crop:
+            rows = np.flatnonzero(union.any(axis=1))
+            cols = np.flatnonzero(union.any(axis=0))
+            if not len(rows):
+                raise ValueError("The stack has no finite pixels.")
+            row0, row1 = int(rows[0]), int(rows[-1]) + 1
+            col0, col1 = int(cols[0]), int(cols[-1]) + 1
+        del union
+        if x_coordinates is not None:
+            x_coordinates = complete_coordinate_grid(x_coordinates, shape)[row0:row1, col0:col1]
+            y_coordinates = complete_coordinate_grid(y_coordinates, shape)[row0:row1, col0:col1]
+        layers = {}
+        for file, name, path in zip(files, names, paths):
+            values = np.load(path, mmap_mode="r", allow_pickle=False)
+            part = matrix_layers(
+                [(name, file.name, values[row0:row1, col0:col1])],
+                sample_id,
+                mineral_id,
+                run_id,
+                pixel_size_x_um,
+                pixel_size_y_um,
+                origin_x_um=origin_x_um + col0 * pixel_size_x_um,
+                origin_y_um=origin_y_um + row0 * pixel_size_y_um,
+                crop=False,
+                x_coordinates=x_coordinates,
+                y_coordinates=y_coordinates,
+            )
+            for layer in part.values():
+                layer.metadata.update(crop_row_offset=row0, crop_column_offset=col0)
+            layers.update(part)
+            del values
+        return layers
