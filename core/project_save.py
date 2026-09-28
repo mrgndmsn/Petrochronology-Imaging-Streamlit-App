@@ -41,7 +41,7 @@ def restore_tab_settings(state):
 
 
 def project_save_ui():
-    from .project_io import save_project_file, ProjectSnapshot
+    from .project_io import save_project_file
 
     st.caption(
         "Save a snapshot whenever you want to keep your progress. Prepare a new snapshot after making changes, then download it."
@@ -74,12 +74,22 @@ def project_save_ui():
         st.caption(
             f"Snapshot prepared at {prepared_at} (server time). Later changes are not included until you prepare again."
         )
+        try:
+            if callable(getattr(data, "read", None)):
+                size, download = data.size, data.read
+            else:
+                size, download = len(data), data
+        except (OSError, AttributeError, TypeError):
+            st.warning(
+                "The prepared download is no longer available. Click Prepare project download to make a new snapshot of your current work."
+            )
+            return
         st.caption(
-            f"Prepared file: {(data.size if isinstance(data, ProjectSnapshot) else len(data)) / (1024 * 1024):.1f} MB. Click Download project snapshot, then check your browser Downloads. Preparing alone does not save a local copy."
+            f"Prepared file: {size / (1024 * 1024):.1f} MB. Click Download project snapshot, then check your browser Downloads. Preparing alone does not save a local copy."
         )
         st.download_button(
             "Download project snapshot",
-            data.read if isinstance(data, ProjectSnapshot) else data,
+            download,
             "geochemical_project.gmap.zip",
             "application/zip",
             on_click="ignore",
