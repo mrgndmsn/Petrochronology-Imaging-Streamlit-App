@@ -52,6 +52,21 @@ if tool == "Concordia":
         else ("238U/206Pb", "207Pb/206Pb")
     )
     plot = frame.copy(deep=False)
+    ellipse_spread = False
+    if {"sd68", "sd75", "n"}.issubset(plot):
+        ellipse_spread = (
+            st.radio(
+                "Ellipse display",
+                ["2SD pixel spread", "2σ uncertainty used for fitting"],
+                key="upb_ellipse_display",
+                horizontal=True,
+            )
+            == "2SD pixel spread"
+        )
+        st.caption(
+            "Ellipse display does not change model weights. Domain means and covariance use the same paired pixels in both coordinate systems."
+        )
+
     if coordinates == "Wetherill":
         plot["plot_x"], plot["plot_y"] = plot.r75, plot.r68
         plot["plot_sx"], plot["plot_sy"], plot["plot_rho"] = (
@@ -61,12 +76,17 @@ if tool == "Concordia":
         )
     else:
         with np.errstate(divide="ignore", invalid="ignore"):
-            plot["plot_x"], plot["plot_y"] = 1 / plot.r68, plot.r76
-            plot["plot_sx"], plot["plot_sy"], plot["plot_rho"] = (
-                plot.s68 / plot.r68**2,
-                plot.s76,
-                -plot.rho_68_76,
-            )
+            a, b = plot.r75, plot.r68
+            cov = plot.rho_wetherill * plot.s75 * plot.s68
+            plot["plot_x"], plot["plot_y"] = 1 / b, a / (uranium * b)
+            vx = plot.s68**2 / b**4
+            vy = (plot.s75**2 / b**2 + a**2 * plot.s68**2 / b**4 - 2 * a * cov / b**3) / uranium**2
+            cxy = (a * plot.s68**2 / b**4 - cov / b**3) / uranium
+            plot["plot_sx"], plot["plot_sy"] = np.sqrt(vx), np.sqrt(vy.clip(lower=0))
+            plot["plot_rho"] = (cxy / (plot.plot_sx * plot.plot_sy)).clip(-1, 1)
+    ellipse_factor = np.sqrt(plot.n) if ellipse_spread and basis.startswith("SEM") else 1.0
+    plot["ellipse_sx"] = plot.plot_sx * ellipse_factor
+    plot["ellipse_sy"] = plot.plot_sy * ellipse_factor
     plot = plot[np.isfinite(plot.plot_x) & np.isfinite(plot.plot_y)].copy()
     fig = scatter(plot, "plot_x", "plot_y", color, st.session_state)
     age_lo, age_hi = st.slider(
@@ -90,7 +110,7 @@ if tool == "Concordia":
         showlegend=True,
     )
     show = st.checkbox(
-        "Show 2σ ellipses (available errors only)",
+        "Show ellipses (available covariance only)",
         value=len(plot) < 1000,
         key="upb_ellipses",
     )
@@ -110,7 +130,7 @@ if tool == "Concordia":
                 "Ellipse outlines are limited to the first 1,000 valid plotted rows; all points and all fit inputs are retained."
             )
         for row_id, r in candidates.iloc[:1000].iterrows():
-            xx, yy = error_ellipse(r.plot_x, r.plot_y, r.plot_sx, r.plot_sy, r.plot_rho, 2)
+            xx, yy = error_ellipse(r.plot_x, r.plot_y, r.ellipse_sx, r.ellipse_sy, r.plot_rho, 2)
             fig.add_scatter(
                 x=xx,
                 y=yy,
@@ -222,6 +242,10 @@ if tool == "Concordia":
                                 ),
                             }
                         )
+                        if result["p_value"] < 0.05:
+                            st.warning(
+                                f"{label}: the single-age concordia model is rejected (MSWD {result['mswd']:.3g}, p={result['p_value']:.3g}). The star is a constrained best-fit date, not evidence that these points share a concordant age."
+                            )
                         xx, yy = _upb_concordia_xy(result["date_ma"], coordinates, **constants)
                         fig.add_scatter(
                             x=[float(xx)],
@@ -288,8 +312,8 @@ if tool == "Concordia":
     )
     if view == "Fit observations" and len(plot):
         for axis, values, errors in [
-            ("x", plot.plot_x, plot.plot_sx),
-            ("y", plot.plot_y, plot.plot_sy),
+            ("x", plot.plot_x, plot.ellipse_sx),
+            ("y", plot.plot_y, plot.ellipse_sy),
         ]:
             extent = 2 * errors.where(np.isfinite(errors) & (errors > 0), 0) if show else 0
             lo, hi = float((values - extent).min()), float((values + extent).max())
@@ -334,6 +358,11 @@ if tool == "Concordia":
                     else result_table.get("mswd", np.nan)
                 ),
                 "Points": result_table.get("n", np.nan),
+                "Model p-value": (
+                    result_table["internal_p_combined"]
+                    if "internal_p_combined" in result_table
+                    else result_table.get("p_value", np.nan)
+                ),
             }
         )
         st.dataframe(summary, hide_index=True)
@@ -376,6 +405,17 @@ else:
         st.info("No dates in this range.")
         st.stop()
     if tool == "Dates and weighted means":
+        order = st.selectbox(
+            "Point order",
+            ["Original order", "Age: youngest to oldest", "Age: oldest to youngest"],
+            key="upb_age_order",
+        )
+        if order != "Original order":
+            dates = dates.sort_values(
+                "date_ma", ascending=order == "Age: youngest to oldest", kind="stable"
+            ).copy()
+            dates["original_analysis_number"] = dates["analysis_number"]
+            dates["analysis_number"] = np.arange(1, len(dates) + 1)
         dates["date_2sigma_ma"] = 2 * dates.date_1sigma_ma
         fig = scatter(
             dates,
@@ -459,7 +499,10 @@ else:
                 "weighted_means.csv",
                 key="upb_wm_csv",
             )
-        fig.update_layout(xaxis_title="Analysis / group number", yaxis_title="Date (Ma)")
+        fig.update_layout(
+            xaxis_title="Analysis / group number" if order == "Original order" else "Age rank",
+            yaxis_title="Date (Ma)",
+        )
     else:
         mode = st.radio(
             "Distribution",
