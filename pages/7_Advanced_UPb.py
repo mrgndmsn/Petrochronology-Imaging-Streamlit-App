@@ -39,6 +39,7 @@ st.caption(
     "Shared external uncertainty is added to the final date uncertainty; it is not used as an independent weight for every pixel."
 )
 if tool == "Concordia":
+    result_table = pd.DataFrame()
     coordinates = st.radio(
         "Coordinates",
         ["Wetherill", "Tera-Wasserburg"],
@@ -244,12 +245,23 @@ if tool == "Concordia":
                                 "Insufficient independent points with positive uncertainties, or degenerate fit."
                             )
                         roots = _upb_line_concordia_intercepts(fit, coordinates, **constants)
-                        for root in roots or [{}]:
+                        for root_index, root in enumerate(roots or [{}]):
                             results.append(
                                 {
                                     "group": str(label),
                                     **{k: v for k, v in fit.items() if np.isscalar(v)},
                                     **root,
+                                    "date_type": (
+                                        (
+                                            "Lower intercept"
+                                            if root_index == 0
+                                            else "Upper intercept"
+                                        )
+                                        if len(roots) == 2
+                                        else (
+                                            "Intercept" if roots else "No intersection in 0–4600 Ma"
+                                        )
+                                    ),
                                 }
                             )
                         xx = np.linspace(part.plot_x.min(), part.plot_x.max(), 200)
@@ -267,13 +279,6 @@ if tool == "Concordia":
                     st.warning(f"{label}: {exc}")
             if results:
                 result_table = pd.DataFrame(results)
-                st.dataframe(result_table, hide_index=True)
-                download_table(
-                    "Download concordia/model results",
-                    result_table,
-                    "upb_models.csv",
-                    key="upb_model_csv",
-                )
     fig.update_layout(xaxis_title=xlab, yaxis_title=ylab)
     view = st.radio(
         "Axis range",
@@ -309,6 +314,38 @@ if tool == "Concordia":
         else:
             st.warning("Axis maxima must exceed minima.")
     compact_render(fig, "upb_concordia_chart")
+    if not result_table.empty:
+        st.subheader("Model dates and uncertainties")
+        summary = pd.DataFrame(
+            {
+                "Group": result_table["group"],
+                "Result": result_table.get(
+                    "date_type", pd.Series("Concordia date", index=result_table.index)
+                ),
+                "Date (Ma)": result_table.get("date_ma", np.nan),
+                "±2σ (Ma)": (
+                    result_table["total_2sigma_ma"]
+                    if "total_2sigma_ma" in result_table
+                    else 2 * result_table.get("one_sigma_ma", np.nan)
+                ),
+                "Model MSWD": (
+                    result_table["internal_mswd_combined"]
+                    if "internal_mswd_combined" in result_table
+                    else result_table.get("mswd", np.nan)
+                ),
+                "Points": result_table.get("n", np.nan),
+            }
+        )
+        st.dataframe(summary, hide_index=True)
+        st.caption(
+            "Uncertainties are ±2σ. Concordia MSWD is the combined model MSWD. Intercepts from the same line share its MSWD; intercept uncertainties are internal and use linear propagation of the fitted line covariance."
+        )
+        with st.expander("Detailed model statistics"):
+            st.dataframe(result_table, hide_index=True)
+        download_table(
+            "Download concordia/model results", result_table, "upb_models.csv", key="upb_model_csv"
+        )
+
 else:
     system = st.selectbox(
         "Date system",
