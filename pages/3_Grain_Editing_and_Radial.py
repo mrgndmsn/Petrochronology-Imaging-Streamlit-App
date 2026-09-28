@@ -13,7 +13,7 @@ from core.models import GrainResult
 from core.plots import map_figure
 from core.provenance import (
     ellipse_radial_table,
-    grain_pixels_all_channels,
+    grain_pixels_for_storage,
     grain_summary_all_channels,
     intensity_core_rim_labels,
     spoke_profile_table,
@@ -74,7 +74,7 @@ def replace_labels(labels):
     )
     shapes, pixels = measure_grains(layer, labels)
     updated = GrainResult(result.layer_key, labels, shapes, pixels, result.settings)
-    updated.pixel_table = grain_pixels_all_channels(layer, updated, st.session_state.layers)
+    updated.pixel_table = grain_pixels_for_storage(layer, updated, st.session_state.layers)
     updated.shape_table = grain_summary_all_channels(layer, updated, st.session_state.layers)
     from core.workspace import store_grain_result
 
