@@ -102,13 +102,11 @@ def measure_grains(layer: MapLayer, labels: np.ndarray) -> tuple[pd.DataFrame, p
             by = float(np.ptp(yv) + dy)
             length, width, angle = max(bx, by), min(bx, by), 0.0 if bx >= by else 90.0
 
-        perimeter = 0.0
-        occupied = set(zip(rows.tolist(), cols.tolist()))
-        for row, col in occupied:
-            perimeter += dx * ((row - 1, col) not in occupied)
-            perimeter += dx * ((row + 1, col) not in occupied)
-            perimeter += dy * ((row, col - 1) not in occupied)
-            perimeter += dy * ((row, col + 1) not in occupied)
+        padded = np.pad(grain_mask, 1)
+        perimeter = float(
+            dx * np.count_nonzero(padded[1:, :] != padded[:-1, :])
+            + dy * np.count_nonzero(padded[:, 1:] != padded[:, :-1])
+        )
         area = float(n * pixel_area)
         roundness = float(np.clip(4 * np.pi * area / perimeter**2, 0, 1)) if perimeter else np.nan
         finite_values = values[np.isfinite(values)]
