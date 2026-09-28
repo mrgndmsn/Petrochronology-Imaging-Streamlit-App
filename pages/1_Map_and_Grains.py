@@ -9,7 +9,7 @@ from core.map_view import map_display_controls, map_downloads
 
 from core.grains import GrainSettings, detect_grains
 from core.io import safe_filename
-from core.provenance import grain_pixels_all_channels, grain_summary_all_channels
+from core.provenance import grain_pixels_for_storage, grain_summary_all_channels
 from core.state import initialize_state
 
 st.set_page_config(page_title="Map and grains", page_icon="🗺️", layout="wide")
@@ -84,7 +84,7 @@ if run:
             result.shape_table = grain_summary_all_channels(
                 current, result, st.session_state.layers
             )
-            result.pixel_table = grain_pixels_all_channels(current, result, st.session_state.layers)
+            result.pixel_table = grain_pixels_for_storage(current, result, st.session_state.layers)
             from core.workspace import store_grain_result
 
             store_grain_result(st.session_state, current, result)
@@ -133,12 +133,20 @@ if grain_result is not None:
         width="stretch",
         container=a,
     )
-    download_table(
+    from core.provenance import complete_grain_channels
+
+    pixel_source = grain_result.pixel_table
+    pixel_layers = st.session_state.layers
+    b.download_button(
         "Download grain pixels",
-        grain_result.pixel_table,
+        lambda: complete_grain_channels(pixel_source, pixel_layers).to_csv(index=False),
         f"{stem}_grain_pixels.csv",
+        "text/csv",
+        on_click="ignore",
         width="stretch",
-        container=b,
+    )
+    st.caption(
+        "Grain measurements include every aligned channel. Pixel chemistry is loaded from the imported maps when needed for plotting or export."
     )
     if not grain_result.shape_table.empty:
         metric = st.selectbox(
