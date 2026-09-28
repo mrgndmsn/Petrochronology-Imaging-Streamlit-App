@@ -236,6 +236,9 @@ if tool == "Concordia":
                                     for k, v in result["internal"].items()
                                     if np.isscalar(v)
                                 },
+                                "internal_2sigma_ma": 2
+                                * result["internal"]["one_sigma_expanded_ma"],
+                                "external_2sigma_ma": abs(result["date_ma"]) * external / 100,
                                 "total_2sigma_ma": np.hypot(
                                     2 * result["internal"]["one_sigma_expanded_ma"],
                                     abs(result["date_ma"]) * external / 100,
@@ -275,6 +278,14 @@ if tool == "Concordia":
                                     "group": str(label),
                                     **{k: v for k, v in fit.items() if np.isscalar(v)},
                                     **root,
+                                    "internal_2sigma_ma": 2 * root.get("one_sigma_ma", np.nan),
+                                    "external_2sigma_ma": abs(root.get("date_ma", np.nan))
+                                    * external
+                                    / 100,
+                                    "total_2sigma_ma": np.hypot(
+                                        2 * root.get("one_sigma_ma", np.nan),
+                                        abs(root.get("date_ma", np.nan)) * external / 100,
+                                    ),
                                     "date_type": (
                                         (
                                             "Lower intercept"
@@ -295,14 +306,25 @@ if tool == "Concordia":
                             mode="lines",
                             name=str(label) + " fit",
                         )
-                        if external:
-                            st.caption(
-                                "York intercept outputs retain internal fit uncertainty; the shared external date percentage is not propagated to intercept ages."
-                            )
                 except (ValueError, ZeroDivisionError, np.linalg.LinAlgError) as exc:
                     st.warning(f"{label}: {exc}")
             if results:
                 result_table = pd.DataFrame(results)
+                for result_row in results:
+                    age = result_row.get("date_ma", np.nan)
+                    error = result_row.get("total_2sigma_ma", np.nan)
+                    if np.isfinite(age) and np.isfinite(error):
+                        low, high = max(0.001, age - error), min(4600.0, age + error)
+                        xx, yy = _upb_concordia_xy(
+                            np.linspace(low, high, 100), coordinates, **constants
+                        )
+                        fig.add_scatter(
+                            x=xx,
+                            y=yy,
+                            mode="lines",
+                            line=dict(width=5),
+                            name=f"{result_row['group']} {age:.1f} ± {error:.1f} Ma (total 2σ)",
+                        )
     fig.update_layout(xaxis_title=xlab, yaxis_title=ylab)
     view = st.radio(
         "Axis range",
@@ -347,7 +369,7 @@ if tool == "Concordia":
                     "date_type", pd.Series("Concordia date", index=result_table.index)
                 ),
                 "Date (Ma)": result_table.get("date_ma", np.nan),
-                "±2σ (Ma)": (
+                "Total ±2σ (Ma)": (
                     result_table["total_2sigma_ma"]
                     if "total_2sigma_ma" in result_table
                     else 2 * result_table.get("one_sigma_ma", np.nan)
@@ -357,6 +379,8 @@ if tool == "Concordia":
                     if "internal_mswd_combined" in result_table
                     else result_table.get("mswd", np.nan)
                 ),
+                "Internal ±2σ (Ma)": result_table.get("internal_2sigma_ma", np.nan),
+                "External ±2σ (Ma)": result_table.get("external_2sigma_ma", np.nan),
                 "Points": result_table.get("n", np.nan),
                 "Model p-value": (
                     result_table["internal_p_combined"]
@@ -367,7 +391,7 @@ if tool == "Concordia":
         )
         st.dataframe(summary, hide_index=True)
         st.caption(
-            "Uncertainties are ±2σ. Concordia MSWD is the combined model MSWD. Intercepts from the same line share its MSWD; intercept uncertainties are internal and use linear propagation of the fitted line covariance."
+            "Uncertainties are ±2σ. Concordia MSWD is the combined model MSWD. Intercepts from the same line share its MSWD; internal intercept uncertainties use linear propagation of the fitted line covariance. Total = √(internal² + external²); colored curve segments show the total date intervals. The external input is a shared percentage of age, not a ratio-error model, so it does not widen the data ellipses."
         )
         with st.expander("Detailed model statistics"):
             st.dataframe(result_table, hide_index=True)
@@ -404,6 +428,9 @@ else:
     if dates.empty:
         st.info("No dates in this range.")
         st.stop()
+    dates["internal_2sigma_ma"] = 2 * dates.date_1sigma_ma
+    dates["external_2sigma_ma"] = dates.date_ma.abs() * external / 100
+    dates["date_2sigma_ma"] = np.hypot(dates.internal_2sigma_ma, dates.external_2sigma_ma)
     if tool == "Dates and weighted means":
         order = st.selectbox(
             "Point order",
@@ -416,7 +443,6 @@ else:
             ).copy()
             dates["original_analysis_number"] = dates["analysis_number"]
             dates["analysis_number"] = np.arange(1, len(dates) + 1)
-        dates["date_2sigma_ma"] = 2 * dates.date_1sigma_ma
         fig = scatter(
             dates,
             "analysis_number",
@@ -457,6 +483,8 @@ else:
                         {
                             "group": str(label),
                             **{k: v for k, v in wm.items() if k != "valid_mask"},
+                            "internal_2sigma_ma": wm["two_sigma_ma"],
+                            "external_2sigma_ma": abs(wm["mean_ma"]) * external / 100,
                             "total_2sigma_ma": total,
                             "uncertainty_basis": basis,
                         }
