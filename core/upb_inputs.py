@@ -99,6 +99,8 @@ def spatial_means(frame, groups, basis="SEM", product=False, uranium_ratio=U238_
             ("rho_68_76", c6876, out["s68"], out["s76"]),
         ]:
             out[label] = np.clip(c / a / b, -1, 1) if a > 0 and b > 0 else np.nan
+        for code in ("68", "75", "76"):
+            out["sd" + code] = out["s" + code] * (np.sqrt(n) if basis == "SEM" else 1)
         rows.append(out)
     return pd.DataFrame(rows)
 
@@ -273,7 +275,7 @@ def upb_input_ui(state):
             )
         uncertainty = remembered_input(
             st.radio,
-            "Domain ellipses",
+            "Domain uncertainty for fitting",
             ["Pixel spread (SD)", "Mean uncertainty (SEM; assumes independent pixels)"],
             key="upb_domain_uncertainty",
         )
