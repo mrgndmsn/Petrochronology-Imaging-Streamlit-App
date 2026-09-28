@@ -6,6 +6,7 @@ import json
 import zipfile
 import tempfile
 import pickle
+import cloudpickle
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +35,7 @@ class UndoSnapshot:
         self.directory = tempfile.TemporaryDirectory(prefix="geochemical-undo-")
         self.path = Path(self.directory.name) / "state.pickle"
         with self.path.open("wb") as handle:
-            pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            cloudpickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load(self):
         with self.path.open("rb") as handle:
@@ -73,7 +74,7 @@ def save_project(
                 if token not in stored_objects:
                     path = directory / f"{prefix}_{index}.pickle"
                     with path.open("wb") as handle:
-                        pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                        cloudpickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
                     stored_objects[token] = path
                 self.entries.append((key, stored_objects[token]))
 
