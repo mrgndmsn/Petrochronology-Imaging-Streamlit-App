@@ -70,14 +70,60 @@ def grain_pixels_all_channels(reference: MapLayer, result: GrainResult, layers) 
     rows, columns = np.where(result.labels > 0)
     table = all_channel_pixel_table(reference, rows, columns, layers)
     table["grain_id"] = result.labels[rows, columns].astype(int)
-    table["grain_uid"] = [
-        f"{reference.sample_id}:{reference.mineral_id}:{reference.run_id}:{gid}"
-        for gid in table.grain_id
-    ]
+    names = {
+        gid: f"{reference.sample_id}:{reference.mineral_id}:{reference.run_id}:{gid}"
+        for gid in np.unique(table.grain_id)
+    }
+    table["grain_uid"] = table.grain_id.map(names)
     table["grain_layer_key"] = reference.key
     table["selection_type"] = "grain"
     table["selection_id"] = table["grain_uid"]
     return table
+
+
+def grain_pixels_for_storage(reference, result, layers):
+    count = np.count_nonzero(result.labels)
+    aligned = compatible_layers(reference, layers)
+    if count * len(aligned) * 8 > 32 * 1024**2:
+        layers = {reference.key: reference}
+    return grain_pixels_all_channels(reference, result, layers)
+
+
+def has_grain_pixels(frame):
+    return {"grain_layer_key", "row_index", "column_index"}.issubset(frame)
+
+
+def complete_grain_channels(frame, layers, channels=None):
+    if frame.empty or not has_grain_pixels(frame):
+        return frame
+    parts = []
+    for key, part in frame.groupby("grain_layer_key", sort=False, dropna=False):
+        reference = layers.get(key)
+        if reference is None:
+            parts.append(part)
+            continue
+        part = part.copy(deep=False)
+        rows = pd.to_numeric(part.row_index, errors="coerce").to_numpy(float)
+        cols = pd.to_numeric(part.column_index, errors="coerce").to_numpy(float)
+        valid = (
+            np.isfinite(rows)
+            & np.isfinite(cols)
+            & (rows == np.floor(rows))
+            & (cols == np.floor(cols))
+            & (rows >= 0)
+            & (cols >= 0)
+            & (rows < reference.values.shape[0])
+            & (cols < reference.values.shape[1])
+        )
+        rr, cc = rows[valid].astype(int), cols[valid].astype(int)
+        for layer in compatible_layers(reference, layers):
+            if layer.channel in part or (channels is not None and layer.channel not in channels):
+                continue
+            values = np.full(len(part), np.nan)
+            values[valid] = layer.values[rr, cc]
+            part[layer.channel] = values
+        parts.append(part)
+    return pd.concat(parts).sort_index(kind="stable") if len(parts) > 1 else parts[0]
 
 
 def grain_summary_all_channels(reference: MapLayer, result: GrainResult, layers) -> pd.DataFrame:
