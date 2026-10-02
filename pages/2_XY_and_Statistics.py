@@ -27,7 +27,7 @@ from core.xy_link import ROW_ID, selection_key, selected_rows, linked_map_ui
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Plots and statistics", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Plots and statistics", page_icon="🍒", layout="wide")
 initialize_state()
 st.title("X–Y plots, correlation, and PCA")
 
