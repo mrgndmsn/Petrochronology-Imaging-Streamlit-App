@@ -6,5 +6,5 @@ from core.streamlit_compat import install_widget_iteration_guard
 
 install_widget_iteration_guard()
 
-st.set_page_config(page_title="Home and Import", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Home and Import", page_icon="🍋", layout="wide")
 st.navigation(pages()).run()
