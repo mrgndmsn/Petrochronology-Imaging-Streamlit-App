@@ -16,7 +16,7 @@ from core.state import initialize_state
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Mineral spatial statistics", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="Mineral spatial statistics", page_icon="🥧", layout="wide")
 initialize_state()
 st.title("Mineral boundaries and nearest-neighbor statistics")
 analysis = _page_input(
