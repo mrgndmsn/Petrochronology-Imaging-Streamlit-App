@@ -159,7 +159,7 @@ if grain_result is not None:
         width="stretch",
     )
     st.caption(
-        "Grain results contain area, aspect ratio and roundness. Pixel chemistry remains available for plotting and export."
+        "Area, aspect ratio and roundness are available in Plots and Calculate columns under Grains. Choose one point per grain for grain-size distributions. In Maps → Channels, choose a grain measurement to map it."
     )
     if not grain_result.shape_table.empty:
         metric = _page_input(
