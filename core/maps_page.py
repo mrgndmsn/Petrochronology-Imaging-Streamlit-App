@@ -18,7 +18,7 @@ from core.selection_maps import map_overlay_figure
 from core.mineral_colors import mineral_palette
 from core.ui_filters import channel_layers_ui
 
-visible = channel_layers_ui(st.session_state, "map")
+visible = channel_layers_ui(st.session_state, "map", include_grain_metrics=True)
 channel = visible[0].channel
 layer = visible[0]
 finite = (
