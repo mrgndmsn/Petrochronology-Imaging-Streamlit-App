@@ -14,7 +14,7 @@ from core.ui_filters import filter_table_ui
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Grain comparison", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="Grain comparison", page_icon="🫛", layout="wide")
 initialize_state()
 st.title("Compare grains across samples and minerals")
 if not st.session_state.grain_results:
