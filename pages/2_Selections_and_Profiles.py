@@ -13,7 +13,7 @@ from core.state import initialize_state
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Selections and profiles", page_icon="✏️", layout="wide")
+st.set_page_config(page_title="Selections and profiles", page_icon="🍉", layout="wide")
 initialize_state()
 st.title("Domains, spots, and profiles")
 from core.selection_maps import (
