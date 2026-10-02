@@ -16,9 +16,7 @@ def environment_python():
 
 
 def requirements_digest():
-    content = b"".join(
-        (ROOT / name).read_bytes() for name in ("requirements.txt", "requirements-local.txt")
-    )
+    content = (ROOT / "requirements.txt").read_bytes()
     return hashlib.sha256(content).hexdigest()
 
 
@@ -43,7 +41,7 @@ def setup():
                 "pip",
                 "install",
                 "-r",
-                str(ROOT / "requirements-local.txt"),
+                str(ROOT / "requirements.txt"),
             ],
             check=True,
         )
