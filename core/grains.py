@@ -188,3 +188,33 @@ def grain_measurements(frame):
     ] + GRAIN_METRICS
     selected = [c for c in columns if c in frame]
     return frame if list(frame.columns) == selected else frame[selected]
+
+
+def grain_pixel_measurements(result):
+    frame = result.pixel_table.copy(deep=False)
+    if "grain_id" not in frame or result.shape_table.empty:
+        return frame
+    measurements = result.shape_table.set_index("grain_id")
+    for metric in GRAIN_METRICS:
+        if metric in measurements:
+            frame[metric] = frame.grain_id.map(measurements[metric])
+    return frame
+
+
+def grain_metric_layer(reference, result, metric, channel):
+    if metric not in GRAIN_METRICS:
+        raise ValueError("Unknown grain measurement.")
+    lookup = np.full(int(result.labels.max()) + 1, np.nan)
+    if not result.shape_table.empty:
+        ids = result.shape_table.grain_id.to_numpy(int)
+        lookup[ids] = result.shape_table[metric].to_numpy(float)
+    return MapLayer(
+        reference.sample_id,
+        reference.mineral_id,
+        reference.run_id,
+        channel,
+        lookup[result.labels],
+        reference.x,
+        reference.y,
+        {**reference.metadata, "grain_metric": metric, "grain_source": reference.key},
+    )
