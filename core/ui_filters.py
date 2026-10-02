@@ -66,16 +66,32 @@ def filter_layers_ui(layers, key):
     return visible
 
 
-def channel_layers_ui(state, key, grain_results_only=False):
+def channel_layers_ui(state, key, grain_results_only=False, include_grain_metrics=False):
     layers = list(state.layers.values())
     if grain_results_only:
         layers = [l for l in layers if l.key in state.grain_results]
     if not layers:
         st.info("No matching raster maps are available.")
         st.stop()
-    channels = sorted({l.channel for l in layers}, key=lambda value: (value.casefold(), value))
+    metric_maps = {}
+    if include_grain_metrics:
+        from .grains import GRAIN_METRICS
+
+        for source_key, result in state.grain_results.items():
+            source = state.layers.get(source_key)
+            if source is None or result.shape_table.empty:
+                continue
+            for metric in GRAIN_METRICS:
+                name = f"{metric} [grains from {source.channel}]"
+                if name not in {l.channel for l in layers}:
+                    metric_maps.setdefault(name, []).append((source, result, metric))
+    channels = sorted(
+        {l.channel for l in layers} | set(metric_maps),
+        key=lambda value: (value.casefold(), value),
+    )
     populated = {l.channel for l in layers if np.isfinite(l.values).any()}
     first = next((i for i, c in enumerate(channels) if c in populated), 0)
+    populated.update(metric_maps)
     channel = _remembered_input(
         st.selectbox,
         "Channel",
@@ -84,7 +100,19 @@ def channel_layers_ui(state, key, grain_results_only=False):
         key=key + "_channel",
         format_func=lambda c: c if c in populated else c + " (no finite values)",
     )
-    visible = filter_layers_ui([l for l in layers if l.channel == channel], key)
+    if channel in metric_maps:
+        from .grains import grain_metric_layer
+
+        sources = filter_layers_ui([source for source, _, _ in metric_maps[channel]], key)
+        selected = {source.key for source in sources}
+        visible = [
+            grain_metric_layer(source, result, metric, channel)
+            for source, result, metric in metric_maps[channel]
+            if source.key in selected
+        ]
+        st.caption("Each grain is filled with its measurement. Background pixels are blank.")
+    else:
+        visible = filter_layers_ui([l for l in layers if l.channel == channel], key)
     if not visible:
         st.info("No maps match these filters.")
         st.stop()
