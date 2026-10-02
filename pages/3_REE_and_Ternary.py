@@ -23,7 +23,7 @@ from core.state import initialize_state
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="REE and ternary", page_icon="🔺", layout="wide")
+st.set_page_config(page_title="REE and ternary", page_icon="🥭", layout="wide")
 initialize_state()
 st.title("REE and ternary plots")
 if not (st.session_state.tables or st.session_state.layers or st.session_state.point_layers):
