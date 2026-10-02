@@ -13,7 +13,7 @@ from core.state import initialize_state
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Mineral overlay", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Mineral overlay", page_icon="🍇", layout="wide")
 initialize_state()
 mineral_points = mineral_layers_ui(st.session_state, "overlay", coordinates_only=True)
 st.title("Co-located mineral overlay")
