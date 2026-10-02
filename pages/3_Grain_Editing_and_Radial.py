@@ -25,7 +25,7 @@ from core.state import initialize_state
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Grain editing", page_icon="✂️", layout="wide")
+st.set_page_config(page_title="Grain editing", page_icon="🥒", layout="wide")
 initialize_state()
 st.title("Manual grain editing and radial profiles")
 if not st.session_state.grain_results:
