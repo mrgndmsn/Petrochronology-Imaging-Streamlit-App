@@ -362,10 +362,14 @@ def analysis_source_ui(state, key, label="Data source", tables=None):
             )
             if channel != "All detection channels":
                 results = [r for r in results if state["layers"][r.layer_key].channel == channel]
-        from .grains import grain_measurements
+        from .grains import grain_measurements, grain_pixel_measurements
 
         parts = [
-            (grain_measurements(r.shape_table) if name == "All grain means" else r.pixel_table)
+            (
+                grain_measurements(r.shape_table)
+                if name == "All grain means"
+                else grain_pixel_measurements(r)
+            )
             for r in results
         ]
         channels, available = analysis_channels_ui(
