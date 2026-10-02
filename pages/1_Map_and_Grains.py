@@ -16,7 +16,7 @@ from core.state import initialize_state
 
 _page_input = page_inputs(__file__)
 
-st.set_page_config(page_title="Map and grains", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Map and grains", page_icon="🫐", layout="wide")
 initialize_state()
 st.caption("Thresholds use strict < or >. Hole filling and bridging may include other pixels.")
 st.title("Grain detection")
