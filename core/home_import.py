@@ -216,9 +216,8 @@ with st.expander("Matrix files", expanded=True):
             st.info("Using the ZIP instead of the separate chemistry uploads.")
         files = archive_members
     cfg = assignment("matrix")
-    cols = st.columns(2)
-    ox = _page_input(cols[0].number_input, "Matrix X origin (µm)", value=0.0)
-    oy = _page_input(cols[1].number_input, "Matrix Y origin (µm)", value=0.0)
+    ox = 0.0
+    oy = _page_input(st.number_input, "Matrix Y origin (µm)", value=0.0)
     crop = _page_input(st.checkbox, "Crop empty outer rows and columns", True)
     x_reference = st.file_uploader(
         "X coordinate-reference matrix (optional)",
