@@ -240,35 +240,8 @@ with st.expander("Matrix files", expanded=True):
         if archive_y != "None":
             y_reference = by_name[archive_y]
         files = [f for f in archive_members if f.name not in (archive_x, archive_y)]
-        st.caption(
-            "Select both coordinate CSVs above so they are excluded from chemistry channels. Enter sample, mineral, run and pixel sizes as usual. Only one chemistry matrix is decompressed at a time."
-        )
-    st.caption(
-        "Coordinate references must match the raw channel shapes. Both are required together; their physical centers replace origin/axis coordinates, while the explicit X/Y sizes define pixel footprint."
-    )
-    collapse = _page_input(
-        st.checkbox, "Collapse repeated X/Y coordinates (mean per pixel)", value=False
-    )
-    rasterize = _page_input(
-        st.checkbox,
-        "Map coordinates to nearest pixel grid",
-        value=False,
-        help="Use for irregular X/Y references. Positions are rounded to the entered pixel spacing; finite values sharing a cell are averaged.",
-    )
-    if rasterize:
-        st.caption(
-            "Uses the minimum measured X/Y as the grid origin. Empty cells stay blank. "
-            "Each finite source cell contributes once to its grid-cell mean; no interpolation is used. "
-            "This also handles repeated coordinates on a regular grid."
-        )
-    if x_reference is not None and y_reference is not None:
-        st.info(
-            "The X/Y reference files set the positions; both origin fields are ignored. Upload chemistry matrices above, and X/Y matrices only in their reference slots."
-        )
-    if collapse and not rasterize:
-        st.caption(
-            "Exact duplicate coordinate pairs become one pixel using the finite mean for each channel. Enter the original measurement pixel sizes. Empty coordinate-free padding is removed; remaining coordinates must align to those sizes. This also works with one-to-one coordinates."
-        )
+        st.caption("Choose the X/Y files; remaining files are channels.")
+    st.caption("X/Y files are mapped to the pixel grid; values sharing a pixel are averaged.")
     from core.channel_rename import bulk_channel_names
 
     bulk_channel_names(files)
@@ -292,8 +265,9 @@ with st.expander("Matrix files", expanded=True):
             ycoords = (
                 read_numeric_matrix(y_reference.getvalue()) if y_reference is not None else None
             )
-            if collapse or rasterize:
-
+            if (xcoords is None) != (ycoords is None):
+                raise ValueError("Supply both X and Y coordinate files.")
+            if xcoords is not None:
                 layers = {}
                 for f in files:
                     part = matrix_layers(
@@ -304,8 +278,7 @@ with st.expander("Matrix files", expanded=True):
                         crop=crop,
                         x_coordinates=xcoords,
                         y_coordinates=ycoords,
-                        collapse_duplicates=collapse,
-                        rasterize_coordinates=rasterize,
+                        rasterize_coordinates=True,
                     )
                     layers.update(part)
             else:
@@ -324,11 +297,6 @@ with st.expander("Matrix files", expanded=True):
             del xcoords, ycoords
             commit_layers(layers)
             st.success(f"Imported {len(layers)} aligned channels.")
-            if rasterize:
-                shift = max(l.metadata.get("coordinate_max_shift_um", 0) for l in layers.values())
-                st.info(
-                    f"Coordinates mapped to the pixel grid. Maximum position shift: {shift:.3g} µm. Values sharing a cell were averaged."
-                )
             status = [
                 {
                     "channel": l.channel,
