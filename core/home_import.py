@@ -217,7 +217,7 @@ with st.expander("Matrix files", expanded=True):
         files = archive_members
     cfg = assignment("matrix")
     ox = 0.0
-    oy = _page_input(st.number_input, "Matrix Y origin (µm)", value=0.0)
+    oy = 0.0
     crop = _page_input(st.checkbox, "Crop empty outer rows and columns", True)
     x_reference = st.file_uploader(
         "X coordinate-reference matrix (optional)",
