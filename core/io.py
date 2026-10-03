@@ -283,6 +283,7 @@ def matrix_layers(
     x_coordinates=None,
     y_coordinates=None,
     collapse_duplicates=False,
+    rasterize_coordinates=False,
 ):
 
     sample_id, mineral_id, run_id, dx, dy = validate_assignment(
@@ -300,7 +301,7 @@ def matrix_layers(
         raise ValueError("Origins must be finite.")
     if (x_coordinates is None) != (y_coordinates is None):
         raise ValueError("Both X and Y coordinate references are required.")
-    if collapse_duplicates:
+    if collapse_duplicates or rasterize_coordinates:
         if x_coordinates is None:
             raise ValueError(
                 "Collapsing coordinate duplicates requires both X and Y reference matrices."
@@ -315,6 +316,38 @@ def matrix_layers(
             raise ValueError(
                 "Some finite channel values have no coordinate pair; supply their coordinates before collapsing."
             )
+        if rasterize_coordinates:
+            layers = {}
+            for (channel, filename, _), values in zip(records, arrays):
+                frame = pd.DataFrame({"x": xg[valid], "y": yg[valid], "value": values[valid]})
+                layer = table_to_layer(
+                    frame,
+                    sample_id,
+                    mineral_id,
+                    run_id,
+                    "value",
+                    "x",
+                    "y",
+                    dx,
+                    dy,
+                    rasterize_coordinates=True,
+                )
+                layer.channel = str(channel).strip()
+                ci = np.rint((frame.x.to_numpy() - layer.x[0]) / dx).astype(int)
+                ri = np.rint((frame.y.to_numpy() - layer.y[0]) / dy).astype(int)
+                displacement = np.hypot(
+                    frame.x.to_numpy() - layer.x[ci], frame.y.to_numpy() - layer.y[ri]
+                )
+                layer.metadata.update(
+                    source_file=filename,
+                    coordinate_cells_before=int(valid.sum()),
+                    coordinate_cells_after=int(len(np.unique(ri * len(layer.x) + ci))),
+                    coordinate_max_shift_um=float(displacement.max()),
+                    coordinate_mean_shift_um=float(displacement.mean()),
+                    aggregation="finite arithmetic mean of source cells per nearest grid cell",
+                )
+                layers[layer.key] = layer
+            return layers
         points = np.column_stack((xg[valid], yg[valid]))
         unique, inverse, counts = np.unique(points, axis=0, return_inverse=True, return_counts=True)
         layers = {}
