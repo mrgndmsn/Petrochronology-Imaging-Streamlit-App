@@ -119,14 +119,14 @@ def table_to_layer(
             raise ValueError(
                 "Coordinates do not align to the explicit X/Y pixel sizes. Enable nearest-cell rasterization for scan coordinates, or use a point layer to retain original coordinates."
             )
-        nc, nr = int(np.rint(cf).max()) + 1, int(np.rint(rf).max()) + 1
+        nc, nr = int(np.floor(cf + 0.5).max()) + 1, int(np.floor(rf + 0.5).max()) + 1
         if nc * nr > 25_000_000:
             raise ValueError(
                 "The explicit X/Y grid is too large; check pixel sizes and coordinates."
             )
         work["column_index"], work["row_index"] = (
-            np.rint(cf).astype(int),
-            np.rint(rf).astype(int),
+            np.floor(cf + 0.5).astype(int),
+            np.floor(rf + 0.5).astype(int),
         )
         pivot = work.pivot_table(
             index="row_index", columns="column_index", values="value", aggfunc="mean"
@@ -333,8 +333,8 @@ def matrix_layers(
                     rasterize_coordinates=True,
                 )
                 layer.channel = str(channel).strip()
-                ci = np.rint((frame.x.to_numpy() - layer.x[0]) / dx).astype(int)
-                ri = np.rint((frame.y.to_numpy() - layer.y[0]) / dy).astype(int)
+                ci = np.floor((frame.x.to_numpy() - layer.x[0]) / dx + 0.5).astype(int)
+                ri = np.floor((frame.y.to_numpy() - layer.y[0]) / dy + 0.5).astype(int)
                 displacement = np.hypot(
                     frame.x.to_numpy() - layer.x[ci], frame.y.to_numpy() - layer.y[ri]
                 )
